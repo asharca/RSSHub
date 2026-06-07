@@ -55,7 +55,7 @@ const apiEndpoints = {
     },
 };
 
-const pageTypeRegex1 = /\/(?<page>[\w-]*?)\/(?<link>\d{4}-\d{2}-\d{2}\/.*)/;
+const pageTypeRegex1 = /\/(?<page>[\w-]*)\/(?<link>\d{4}-\d{2}-\d{2}\/.*)/;
 const pageTypeRegex2 = /(?<!news|politics)\/(?<page>features\/|graphics\/)(?<link>.*)/;
 const regex = [pageTypeRegex1, pageTypeRegex2];
 
@@ -466,8 +466,8 @@ const nodeRenderers = {
         }
         return nextNode(node.content);
     },
-    br: () => `<br/>`,
-    hr: () => `<br/>`,
+    br: () => '<br/>',
+    hr: () => '<br/>',
     ad: () => {},
     blockquote: async (node, nextNode) => `<blockquote>${await nextNode(node.content)}</blockquote>`,
     quote: async (node, nextNode) => `<blockquote>${await nextNode(node.content)}</blockquote>`,

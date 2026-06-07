@@ -12,7 +12,7 @@ import got from '@/utils/got';
 import { parseDate } from '@/utils/parse-date';
 
 const toSize = (raw) => {
-    const matches = raw.match(/(\d+(\.\d+)?)(\w+)/);
+    const matches = raw.match(/(\d+(\.\d+)?)(\D\w*)/);
     return matches[3] === 'GB' ? matches[1] * 1024 : matches[1];
 };
 
@@ -73,7 +73,7 @@ export const route: Route = {
 };
 
 async function handler(ctx) {
-    const isWestern = /^\/western/.test(getSubPath(ctx));
+    const isWestern = getSubPath(ctx).startsWith('/western');
     const domain = ctx.req.query('domain') ?? 'javbus.com';
     const westernDomain = ctx.req.query('western_domain') ?? 'javbus.org';
 
@@ -154,7 +154,7 @@ async function handler(ctx) {
                 // To fetch magnets.
 
                 try {
-                    const matches = detailResponse.data.match(/var gid = (\d+);[\S\s]*var uc = (\d+);[\S\s]*var img = '(.*)';/);
+                    const matches = detailResponse.data.match(/var gid = (\d+);[\s\S]*var uc = (\d+);[\s\S]*var img = '(.*)';/);
 
                     const magnetResponse = await got({
                         method: 'get',

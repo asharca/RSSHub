@@ -21,13 +21,12 @@ export const route: Route = {
     },
     name: 'Channel & Topic',
     categories: ['traditional-media'],
-    description: `
-::: tip
-  All Topics in [Topic Library](https://abc.net.au/news/topics) are supported, you can fill in the field after \`topic\` in its URL, or fill in the \`documentId\`.
+    description: `::: tip
+All Topics in [Topic Library](https://abc.net.au/news/topics) are supported, you can fill in the field after \`topic\` in its URL, or fill in the \`documentId\`.
 
-  For example, the URL for [Computer Science](https://www.abc.net.au/news/topic/computer-science) is \`https://www.abc.net.au/news/topic/computer-science\`, the \`category\` is \`news/topic/computer-science\`, and the \`documentId\` of the Topic is \`2302\`, so the route is [/abc/news/topic/computer-science](https://rsshub.app/abc/news/topic/computer-science) and [/abc/2302](https://rsshub.app/abc/2302).
+For example, the URL for [Computer Science](https://www.abc.net.au/news/topic/computer-science) is \`https://www.abc.net.au/news/topic/computer-science\`, the \`category\` is \`news/topic/computer-science\`, and the \`documentId\` of the Topic is \`2302\`, so the route is [/abc/news/topic/computer-science](https://rsshub.app/abc/news/topic/computer-science) and [/abc/2302](https://rsshub.app/abc/2302).
 
-  The supported channels are all listed in the table below. For other channels, please find the \`documentId\` in the source code of the channel page and fill it in as above.
+The supported channels are all listed in the table below. For other channels, please find the \`documentId\` in the source code of the channel page and fill it in as above.
 :::`,
     maintainers: ['nczitzk', 'pseudoyu'],
     handler,
@@ -40,7 +39,7 @@ async function handler(ctx) {
     const rootUrl = 'https://www.abc.net.au';
     const apiUrl = new URL('news-web/api/loader/channelrefetch', rootUrl).href;
 
-    let currentUrl = '';
+    let currentUrl: string;
     let documentId;
 
     if (Number.isNaN(category)) {
@@ -50,7 +49,7 @@ async function handler(ctx) {
         const feedUrl = new URL(`news/feed/${documentId}/rss.xml`, rootUrl).href;
 
         const feedResponse = await ofetch(feedUrl);
-        currentUrl = feedResponse.match(/<link>([\w-./:?]+)<\/link>/)[1];
+        currentUrl = feedResponse.match(/<link>([\w./:?-]+)<\/link>/)[1];
     }
 
     const currentResponse = await ofetch(currentUrl);
@@ -106,8 +105,8 @@ async function handler(ctx) {
 
                     content('#body *, div[data-component="FeatureMedia"]')
                         .children()
-                        .each(function () {
-                            const element = content(this);
+                        .each((_, el) => {
+                            const element = content(el);
                             if (element.prop('tagName').toLowerCase() === 'figure') {
                                 element.replaceWith(
                                     renderDescription({
@@ -125,7 +124,7 @@ async function handler(ctx) {
                     item.title = content('meta[property="og:title"]').prop('content');
                     item.description = '';
 
-                    const enclosurePattern = String.raw`"(?:MIME|content)?Type":"([\w]+/[\w]+)".*?"(?:fileS|s)?ize":(\d+),.*?"url":"([\w-.:/?]+)"`;
+                    const enclosurePattern = String.raw`"(?:MIME|content)?Type":"(\w+/\w+)".*?"(?:fileS|s)?ize":(\d+),.*?"url":"([\w.:/?-]+)"`;
 
                     const enclosureMatches = detailResponse.match(new RegExp(enclosurePattern, 'g'));
 

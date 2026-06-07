@@ -105,8 +105,8 @@ const gdgov = async (info, ctx) => {
     const currentUrl = `${rootUrl}/${pathname}`;
 
     let $ = '';
-    let name = '';
-    let list = '';
+    let name: string;
+    let list: string;
     // 判断是否处于特殊目录
     if (pathname.startsWith('gkmlpt')) {
         title_element = undefined;
@@ -149,7 +149,7 @@ const gdgov = async (info, ctx) => {
     }
 
     const lists = list.map((i, item) => {
-        let link = '';
+        let link: string;
 
         if (pathname.startsWith('gkmlpt')) {
             link = i.url;
@@ -186,7 +186,7 @@ const gdgov = async (info, ctx) => {
                         title: data.art_title,
                         description: renderZcjdpt(data),
                         pubDate: timezone(parseDate(data.pub_time), +8),
-                        author: /(本|本网|本站)/.test(data.pub_unite) ? authorisme : data.pub_unite,
+                        author: /本/.test(data.pub_unite) ? authorisme : data.pub_unite,
                     };
                 });
             } else if (idlink.host === 'mp.weixin.qq.com') {
@@ -198,16 +198,13 @@ const gdgov = async (info, ctx) => {
                     const content = load(res);
 
                     // 获取来源
-                    let author = '';
-                    author = author_element === undefined ? content('meta[name="ContentSource"]').attr('content') : content(author_element).text().trim().match(author_match)[1].trim().replaceAll(/(-*$)/g, '');
+                    const author = author_element === undefined ? content('meta[name="ContentSource"]').attr('content') : content(author_element).text().trim().match(author_match)[1].trim().replaceAll(/(-*$)/g, '');
 
                     // 获取发布时间
-                    let pubDate = '';
-                    pubDate = pubDate_element === undefined ? content('meta[name="PubDate"]').attr('content') : content(pubDate_element).text().trim().match(pubDate_match)[1].trim().replaceAll(/(-*$)/g, '');
+                    const pubDate = pubDate_element === undefined ? content('meta[name="PubDate"]').attr('content') : content(pubDate_element).text().trim().match(pubDate_match)[1].trim().replaceAll(/(-*$)/g, '');
 
                     // 获取标题
-                    let title = '';
-                    title = title_element === undefined ? content('meta[name="ArticleTitle"]').attr('content') : content(title_element).text().trim().match(title_match)[1];
+                    const title = title_element === undefined ? content('meta[name="ArticleTitle"]').attr('content') : content(title_element).text().trim().match(title_match)[1];
                     // 获取正文
                     const description_content = description_element.split(',').filter((item) => item !== '');
                     for (let index = 0; index < description_content.length; index++) {
@@ -220,7 +217,7 @@ const gdgov = async (info, ctx) => {
                         title,
                         description,
                         pubDate: timezone(parseDate(pubDate, pubDate_format), +8),
-                        author: /本|本网|本站/.test(author) ? authorisme : author,
+                        author: /本/.test(author) ? authorisme : author,
                     };
                 });
             }

@@ -6,6 +6,7 @@ import ConfigNotFoundError from '@/errors/types/config-not-found';
 import got from '@/utils/got';
 import ofetch from '@/utils/ofetch';
 import { parseDate } from '@/utils/parse-date';
+import { getPlaywrightPage } from '@/utils/playwright';
 
 const baseUrl = 'https://nhentai.net';
 
@@ -65,16 +66,32 @@ const getCookie = async (username, password, cache) => {
     return userTokenCookie;
 };
 
-const oFetch = (url, ...options) =>
-    ofetch(url, {
-        ...options,
-        headers: {
-            host: 'nhentai.net',
-        },
-    });
+// Reason: try ofetch first for speed, fall back to Playwright on 403 (anti-bot protection)
+const fetchPage = async (url: string): Promise<string> => {
+    try {
+        return await ofetch(url);
+    } catch (error: unknown) {
+        const status = (error as { status?: number; statusCode?: number }).status ?? (error as { status?: number; statusCode?: number }).statusCode;
+        if (status === 403) {
+            const { page, destroy } = await getPlaywrightPage(url, {
+                onBeforeLoad: async (page) => {
+                    const allowedTypes = new Set(['document', 'script', 'xhr', 'fetch']);
+                    await page.route('**/*', (route) => {
+                        const request = route.request();
+                        allowedTypes.has(request.resourceType()) ? route.continue() : route.abort();
+                    });
+                },
+            });
+            const content = await page.content();
+            await destroy();
+            return content;
+        }
+        throw error;
+    }
+};
 
 const getSimple = async (url) => {
-    const data = await oFetch(url);
+    const data = await fetchPage(url);
     const $ = load(data);
 
     return $('.gallery a.cover')
@@ -113,7 +130,9 @@ const parseSimpleDetail = ($ele) => {
 
 const getTorrent = async (simple, cookie) => {
     const { link } = simple;
-    const response = await oFetch(link + 'download', { followRedirect: false, responseType: 'buffer', headers: { Cookie: cookie } });
+    const response = await ofetch(link + 'download', {
+        headers: { Cookie: cookie },
+    });
     return {
         ...simple,
         enclosure_url: response,
@@ -123,13 +142,13 @@ const getTorrent = async (simple, cookie) => {
 
 const getDetail = async (simple) => {
     const { link } = simple;
-    const data = await oFetch(link);
+    const data = await fetchPage(link);
     const $ = load(data);
 
     const galleryImgs = $('.gallerythumb img')
         .toArray()
         .map((ele) => new URL($(ele).attr('data-src'), baseUrl).href)
-        .map((src) => src.replace(/(.+)(\d+)t\.(.+)/, (_, p1, p2, p3) => `${p1}${p2}.${p3}`)) // thumb to high-quality
+        .map((src) => src.replace(/(.+)(\d)t\.(.+)/, (_, p1, p2, p3) => `${p1}${p2}.${p3}`)) // thumb to high-quality
         .map((src) => src.replace(/t(\d+)\.nhentai\.net/, 'i$1.nhentai.net'))
         .map((src) => src.replace(/\.(jpg|png|gif)\.webp$/, '.$1')) // 移除重複的.webp後綴
         .map((src) => src.replace(/\.webp\.webp$/, '.webp')); // 處理.webp.webp的情況

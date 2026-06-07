@@ -65,7 +65,7 @@ const ProcessImg = (content) => {
 
 const ProcessFeed = async (ctx, type, id) => {
     const link = `https://www.dongqiudi.com/${type}/${id}.html`;
-    const apiUrl = `https://api.dongqiudi.com/v3/archive/app/channel/feeds`;
+    const apiUrl = 'https://api.dongqiudi.com/v3/archive/app/channel/feeds';
     const { data: response } = await got(link);
 
     let name;
@@ -145,7 +145,7 @@ const ProcessFeedType3 = (item, response) => {
     const initialState = JSON.parse(
         $('script:contains("window.__INITIAL_STATE__")')
             .text()
-            .match(/window\.__INITIAL_STATE__\s*=\s*(.*?);\(/)[1]
+            .match(/window\.__INITIAL_STATE__\s*=\s*((?:\S.*?)??);\(/)[1]
     );
 
     // filter out undefined item

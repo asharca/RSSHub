@@ -27,7 +27,7 @@ export const route: Route = {
     name: 'Latest Magazine',
     maintainers: ['EthanWng97'],
     handler,
-    description: `For instance, when doing search at [https://magazinelib.com](https://magazinelib.com) and you get url \`https://magazinelib.com/?s=new+yorker\`, the query is \`new+yorker\``,
+    description: 'For instance, when doing search at <https://magazinelib.com> and you get url `https://magazinelib.com/?s=new+yorker`, the query is `new+yorker`',
 };
 
 async function handler(ctx) {
@@ -46,7 +46,7 @@ async function handler(ctx) {
     if (subTitle === undefined) {
         subTitle = '';
     } else {
-        subTitle = subTitle.replaceAll(/[^\dA-Za-z]+/g, ' ').toUpperCase();
+        subTitle = subTitle.replaceAll(/[^\dA-Z]+/gi, ' ').toUpperCase();
         subTitle = ` - ${subTitle}`;
     }
 

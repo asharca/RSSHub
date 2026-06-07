@@ -1,6 +1,8 @@
+// oxlint-disable unicorn/prefer-math-trunc
+// oxlint-disable no-unused-vars
 /* eslint-disable prefer-rest-params */
 /* eslint-disable default-case */
-/* eslint-disable unicorn/consistent-function-scoping */
+// oxlint-disable unicorn/consistent-function-scoping
 /* eslint-disable no-console */
 // Copyright 2018 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
@@ -319,7 +321,7 @@
 
                     // func resetMemoryDataView()
                     'runtime.resetMemoryDataView': (sp) => {
-                        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                        // eslint-disable-next-line @typescript-eslint/no-unused-vars, no-useless-assignment
                         sp >>>= 0;
                         this.mem = new DataView(this._inst.exports.mem.buffer);
                     },
@@ -632,7 +634,7 @@
 
         _makeFuncWrapper(id) {
             // somehow avoiding aliasing this with an arrow function doesn't work
-            // eslint-disable-next-line unicorn/no-this-assignment, @typescript-eslint/no-this-alias
+            // oxlint-disable-next-line unicorn/no-this-assignment typescript/no-this-alias
             const go = this;
             return function () {
                 const event = { id, this: this, args: arguments };

@@ -1,4 +1,4 @@
-import ofetch from '@/utils/ofetch';
+import logger from '@/utils/logger';
 import { parseDate } from '@/utils/parse-date';
 
 import { renderDescription } from './templates/description';
@@ -27,10 +27,26 @@ export const parseList = (videos) =>
         contentId: item.contentId,
     }));
 
-export const getItem = async (item) => {
-    const response = await ofetch(`${baseUrl}/api/video/${item.contentId}`, {
-        headers,
+export const playwrightFetch = async (url: string, context) => {
+    const page = await context.newPage();
+    await page.setExtraHTTPHeaders(headers);
+    await page.route('**/*', (route) => {
+        const request = route.request();
+        request.resourceType() === 'document' ? route.continue() : route.abort();
     });
+
+    logger.http(`Requesting ${url}`);
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
+
+    const apiResponse = await page.evaluate(() => document.body.textContent || '');
+    const response = JSON.parse(apiResponse);
+    await page.close();
+
+    return response;
+};
+
+export const getItem = async (item, context) => {
+    const response = await playwrightFetch(`${baseUrl}/api/video/${item.contentId}`, context);
 
     const videoInfo: Video = response.video;
     videoInfo.gallery = hdGallery(videoInfo.gallery);
