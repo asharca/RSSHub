@@ -3546,6 +3546,9 @@
   "/github/topics/:name/:qs?": [
     "queensferryme"
   ],
+  "/github/trending-chart/:since/:language/:spoken_language?": [
+    "asharca"
+  ],
   "/github/trending/:since/:language/:spoken_language?": [
     "DIYgod",
     "jameschensmith"

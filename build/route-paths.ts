@@ -1147,6 +1147,7 @@ export type RoutePath =
   | `/github/starred_repos/:user`
   | `/github/stars/:user/:repo`
   | `/github/topics/:name/:qs?`
+  | `/github/trending-chart/:since/:language/:spoken_language?`
   | `/github/trending/:since/:language/:spoken_language?`
   | `/github/user/followers/:user`
   | `/github/user_event/:username/:types?`

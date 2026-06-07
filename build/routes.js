@@ -49890,6 +49890,68 @@ export default {
         "location": "topic.ts",
         "module": () => import('@/routes/github/topic.ts')
       },
+      "/trending-chart/:since/:language/:spoken_language?": {
+        "path": "/trending-chart/:since/:language/:spoken_language?",
+        "categories": [
+          "programming"
+        ],
+        "example": "/github/trending-chart/weekly/any",
+        "view": 5,
+        "parameters": {
+          "since": {
+            "description": "time range",
+            "options": [
+              {
+                "value": "daily",
+                "label": "Today"
+              },
+              {
+                "value": "weekly",
+                "label": "This week"
+              },
+              {
+                "value": "monthly",
+                "label": "This month"
+              }
+            ]
+          },
+          "language": {
+            "description": "programming language, use `any` for all. Available in [Trending page](https://github.com/trending)'s URL",
+            "default": "any"
+          },
+          "spoken_language": {
+            "description": "natural language filter, available in [Trending page](https://github.com/trending)'s URL"
+          }
+        },
+        "features": {
+          "requireConfig": [
+            {
+              "name": "GITHUB_ACCESS_TOKEN",
+              "description": ""
+            }
+          ],
+          "requirePuppeteer": false,
+          "antiCrawler": false,
+          "supportBT": false,
+          "supportPodcast": false,
+          "supportScihub": false
+        },
+        "radar": [
+          {
+            "source": [
+              "github.com/trending"
+            ],
+            "target": "/trending-chart/:since"
+          }
+        ],
+        "name": "Trending Chart",
+        "maintainers": [
+          "asharca"
+        ],
+        "url": "github.com/trending",
+        "location": "trending-chart.tsx",
+        "module": () => import('@/routes/github/trending-chart.tsx')
+      },
       "/trending/:since/:language/:spoken_language?": {
         "path": "/trending/:since/:language/:spoken_language?",
         "categories": [
