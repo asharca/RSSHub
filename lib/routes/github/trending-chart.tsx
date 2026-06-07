@@ -63,12 +63,14 @@ function buildSvg(repos: Repo[], since: string, language: string, now: Date): st
     const TITLE_H = 64;
     const PAD = 20;
     const LABEL_W = 230;
-    const BAR_X = LABEL_W + PAD * 2;
-    const BAR_MAX_W = W - BAR_X - PAD - 60;
+    const BAR_X = LABEL_W + PAD * 2; // 270
+    const COUNT_X = W - PAD; // 780 — count text right edge
+    const COUNT_AREA = 52; // reserved for "+5.2k" at 12px
+    const BAR_MAX_W = COUNT_X - COUNT_AREA - BAR_X - 8; // gap of 8px between bar and count
     const MAX_NAME_CHARS = 30;
 
     const maxPeriodStars = Math.max(...repos.map((r) => r.periodStars), 1);
-    const totalH = TITLE_H + repos.length * ROW_H + PAD;
+    const totalH = TITLE_H + repos.length * ROW_H + 12;
     const label = language === 'any' || !language ? 'All Languages' : language;
     const gainHeader = since === 'daily' ? 'Today' : since === 'weekly' ? 'This week' : 'This month';
     const dateLabel = getDateLabel(since, now);
@@ -84,7 +86,7 @@ function buildSvg(repos: Repo[], since: string, language: string, now: Date): st
             return `
 <text x="${LABEL_W + PAD}" y="${y + 21}" text-anchor="end" fill="#24292f" font-size="13" font-weight="500">${escSvg(name)}</text>
 <rect x="${BAR_X}" y="${y + 8}" width="${barW}" height="16" fill="${barColor}" rx="3"/>
-<text x="${BAR_X + barW + 6}" y="${y + 21}" fill="#1a7f37" font-size="12" font-weight="600">${countText}</text>`;
+<text x="${COUNT_X}" y="${y + 21}" text-anchor="end" fill="#1a7f37" font-size="12" font-weight="600">${countText}</text>`;
         })
         .join('');
 
