@@ -7,30 +7,8 @@ import type { Route } from '@/types';
 import { ViewType } from '@/types';
 import got from '@/utils/got';
 
-// Subset of https://github.com/ozh/github-colors
-const LANG_COLORS: Record<string, string> = {
-    JavaScript: '#f1e05a',
-    TypeScript: '#2b7489',
-    Python: '#3572A5',
-    Go: '#00ADD8',
-    Rust: '#dea584',
-    Java: '#b07219',
-    'C++': '#f34b7d',
-    C: '#555555',
-    Ruby: '#701516',
-    PHP: '#4F5D95',
-    Shell: '#89e051',
-    Swift: '#F05138',
-    Kotlin: '#A97BFF',
-    Dart: '#00B4AB',
-    Scala: '#c22d40',
-    HTML: '#e34c26',
-    CSS: '#563d7c',
-    Vue: '#41b883',
-    Nix: '#7e7eff',
-};
-
-const FALLBACK_COLOR = '#8b949e';
+const ASSETS_REPO = 'asharca/rss-assets';
+const ASSETS_BRANCH = 'main';
 
 function formatCount(n: number): string {
     if (n >= 1000) {
@@ -39,74 +17,11 @@ function formatCount(n: number): string {
     return String(n);
 }
 
-function buildSvg(repos: Repo[], since: string, language: string): string {
-    const W = 800;
-    const ROW_H = 36;
-    const HEADER_H = 48;
-    const TITLE_H = 52;
-    const PAD = 16;
-
-    // columns: rank | repo | lang | stars | forks | period gain
-    // total content width = W - 2*PAD = 768, distributed below
-    const C = {
-        rank: { x: PAD, w: 36 }, // right-aligned
-        repo: { x: 52, w: 260 }, // left-aligned
-        lang: { x: 312, w: 150 }, // dot+text left-aligned
-        stars: { x: 462, w: 92 }, // right-aligned
-        forks: { x: 554, w: 84 }, // right-aligned
-        gain: { x: 638, w: 146 }, // right-aligned, ends at W-PAD=784
-    };
-
-    const totalH = TITLE_H + HEADER_H + repos.length * ROW_H + 1;
-
-    const rows = repos
-        .map((repo, i) => {
-            const y = TITLE_H + HEADER_H + i * ROW_H;
-            const bg = i % 2 === 0 ? '#ffffff' : '#f6f8fa';
-            const dotColor = LANG_COLORS[repo.lang ?? ''] ?? FALLBACK_COLOR;
-            const langLabel = repo.lang ?? '';
-            const gainText = repo.periodStars > 0 ? `↑ ${formatCount(repo.periodStars)}` : '—';
-
-            return `
-<rect x="0" y="${y}" width="${W}" height="${ROW_H}" fill="${bg}"/>
-<text x="${C.rank.x + C.rank.w}" y="${y + 23}" text-anchor="end" fill="#57606a" font-size="13">${i + 1}</text>
-<text x="${C.repo.x}" y="${y + 23}" fill="#0969da" font-size="13" font-weight="500">${escSvg(repo.nameWithOwner)}</text>
-<circle cx="${C.lang.x + 7}" cy="${y + 18}" r="5" fill="${dotColor}"/>
-<text x="${C.lang.x + 18}" y="${y + 23}" fill="#24292f" font-size="13">${escSvg(langLabel)}</text>
-<text x="${C.stars.x + C.stars.w}" y="${y + 23}" text-anchor="end" fill="#24292f" font-size="13">★ ${formatCount(repo.stars)}</text>
-<text x="${C.forks.x + C.forks.w}" y="${y + 23}" text-anchor="end" fill="#57606a" font-size="13">⑂ ${formatCount(repo.forks)}</text>
-<text x="${C.gain.x + C.gain.w}" y="${y + 23}" text-anchor="end" fill="${repo.periodStars > 0 ? '#1a7f37' : '#57606a'}" font-size="13" font-weight="${repo.periodStars > 0 ? '600' : '400'}">${gainText}</text>`;
-        })
-        .join('');
-
-    const label = language === 'any' || !language ? 'All Languages' : language;
-    const gainHeader = since === 'daily' ? 'Today' : since === 'weekly' ? 'This week' : 'This month';
-
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${totalH}" font-family="system-ui,-apple-system,sans-serif">
-<rect width="${W}" height="${totalH}" fill="#ffffff" rx="6"/>
-<rect width="${W}" height="${totalH}" fill="none" stroke="#d0d7de" rx="6"/>
-
-<!-- title -->
-<text x="${PAD}" y="34" font-size="16" font-weight="600" fill="#24292f">GitHub Trending · ${escSvg(since)} · ${escSvg(label)}</text>
-
-<!-- header -->
-<rect x="0" y="${TITLE_H}" width="${W}" height="${HEADER_H}" fill="#f6f8fa"/>
-<line x1="0" y1="${TITLE_H}" x2="${W}" y2="${TITLE_H}" stroke="#d0d7de"/>
-<text x="${C.rank.x + C.rank.w}" y="${TITLE_H + 30}" text-anchor="end" fill="#57606a" font-size="12" font-weight="600">#</text>
-<text x="${C.repo.x}" y="${TITLE_H + 30}" fill="#57606a" font-size="12" font-weight="600">Repository</text>
-<text x="${C.lang.x + 18}" y="${TITLE_H + 30}" fill="#57606a" font-size="12" font-weight="600">Language</text>
-<text x="${C.stars.x + C.stars.w}" y="${TITLE_H + 30}" text-anchor="end" fill="#57606a" font-size="12" font-weight="600">Stars</text>
-<text x="${C.forks.x + C.forks.w}" y="${TITLE_H + 30}" text-anchor="end" fill="#57606a" font-size="12" font-weight="600">Forks</text>
-<text x="${C.gain.x + C.gain.w}" y="${TITLE_H + 30}" text-anchor="end" fill="#1a7f37" font-size="12" font-weight="600">↑ ${escSvg(gainHeader)}</text>
-
-${rows}
-
-<!-- bottom border -->
-<line x1="0" y1="${totalH - 1}" x2="${W}" y2="${totalH - 1}" stroke="#d0d7de"/>
-</svg>`;
+function escSvg(s: string): string {
+    return s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 }
 
-function escSvg(s: string): string {
+function escHtml(s: string): string {
     return s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 }
 
@@ -114,10 +29,116 @@ interface Repo {
     nameWithOwner: string;
     owner: string;
     name: string;
+    description: string | null;
     lang: string | null;
     stars: number;
     forks: number;
     periodStars: number;
+}
+
+function truncate(s: string, max: number): string {
+    return s.length > max ? s.slice(0, max - 1) + '…' : s;
+}
+
+function getDateLabel(since: string, now: Date): string {
+    if (since === 'daily') {
+        return now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+    }
+    if (since === 'monthly') {
+        return now.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+    }
+    // weekly: Mon–Sun range
+    const day = now.getUTCDay() || 7;
+    const monday = new Date(now);
+    monday.setUTCDate(now.getUTCDate() - day + 1);
+    const sunday = new Date(monday);
+    sunday.setUTCDate(monday.getUTCDate() + 6);
+    const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+    return `${fmt(monday)} – ${fmt(sunday)}, ${monday.getUTCFullYear()}`;
+}
+
+function buildSvg(repos: Repo[], since: string, language: string, now: Date): string {
+    const W = 800;
+    const ROW_H = 32;
+    const TITLE_H = 64;
+    const PAD = 20;
+    const LABEL_W = 230;
+    const BAR_X = LABEL_W + PAD * 2;
+    const BAR_MAX_W = W - BAR_X - PAD - 60;
+    const MAX_NAME_CHARS = 30;
+
+    const maxPeriodStars = Math.max(...repos.map((r) => r.periodStars), 1);
+    const totalH = TITLE_H + repos.length * ROW_H + PAD;
+    const label = language === 'any' || !language ? 'All Languages' : language;
+    const gainHeader = since === 'daily' ? 'Today' : since === 'weekly' ? 'This week' : 'This month';
+    const dateLabel = getDateLabel(since, now);
+
+    const rows = repos
+        .map((repo, i) => {
+            const y = TITLE_H + i * ROW_H;
+            const barW = Math.max(4, Math.round((repo.periodStars / maxPeriodStars) * BAR_MAX_W));
+            const barColor = i === 0 ? '#2da44e' : i === 1 ? '#3fb950' : i === 2 ? '#56d364' : '#8ac8a0';
+            const countText = repo.periodStars > 0 ? `+${formatCount(repo.periodStars)}` : '0';
+            const name = truncate(repo.nameWithOwner, MAX_NAME_CHARS);
+
+            return `
+<text x="${LABEL_W + PAD}" y="${y + 21}" text-anchor="end" fill="#24292f" font-size="13" font-weight="500">${escSvg(name)}</text>
+<rect x="${BAR_X}" y="${y + 8}" width="${barW}" height="16" fill="${barColor}" rx="3"/>
+<text x="${BAR_X + barW + 6}" y="${y + 21}" fill="#1a7f37" font-size="12" font-weight="600">${countText}</text>`;
+        })
+        .join('');
+
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${totalH}" font-family="system-ui,-apple-system,sans-serif">
+<rect width="${W}" height="${totalH}" fill="#ffffff" rx="8"/>
+<rect width="${W}" height="${totalH}" fill="none" stroke="#d0d7de" rx="8"/>
+<text x="${PAD}" y="28" font-size="14" font-weight="600" fill="#24292f">GitHub Trending · ${escSvg(gainHeader)} · ${escSvg(label)}</text>
+<text x="${PAD}" y="48" font-size="12" fill="#57606a">${escSvg(dateLabel)}</text>
+<line x1="${PAD}" y1="${TITLE_H - 8}" x2="${W - PAD}" y2="${TITLE_H - 8}" stroke="#d0d7de" stroke-width="0.5"/>
+${rows}
+</svg>`;
+}
+
+// Upload SVG to rss-assets repo. If a file for today already exists, skip upload and return the URL.
+async function uploadOrGetSvgUrl(filePath: string, svgContent: string, token: string): Promise<string> {
+    const apiUrl = `https://api.github.com/repos/${ASSETS_REPO}/contents/${filePath}`;
+    const rawUrl = `https://raw.githubusercontent.com/${ASSETS_REPO}/${ASSETS_BRANCH}/${filePath}`;
+    const headers = { Authorization: `bearer ${token}`, 'User-Agent': 'RSSHub' };
+
+    try {
+        await got({ url: apiUrl, headers });
+        return rawUrl;
+    } catch {
+        // 404 → upload
+    }
+
+    const content = Buffer.from(svgContent).toString('base64');
+    await got({
+        method: 'put',
+        url: apiUrl,
+        headers,
+        json: {
+            message: `chore: update trending chart ${filePath}`,
+            content,
+            branch: ASSETS_BRANCH,
+        },
+    });
+
+    return rawUrl;
+}
+
+function buildTextList(repos: Repo[], since: string): string {
+    const gainLabel = since === 'daily' ? 'today' : since === 'weekly' ? 'this week' : 'this month';
+
+    const items = repos
+        .map((repo) => {
+            const repoUrl = `https://github.com/${escHtml(repo.nameWithOwner)}`;
+            const gain = repo.periodStars > 0 ? ` · <strong style="color:#1a7f37">↑ ${formatCount(repo.periodStars)} ${gainLabel}</strong>` : '';
+            const desc = repo.description ? `<br/><span style="color:#57606a;font-size:13px">${escHtml(repo.description)}</span>` : '';
+            return `<li><a href="${repoUrl}"><strong>${escHtml(repo.nameWithOwner)}</strong></a>${gain} · ★ ${formatCount(repo.stars)} · ⑂ ${formatCount(repo.forks)}${repo.lang ? ` · ${escHtml(repo.lang)}` : ''}${desc}</li>`;
+        })
+        .join('\n');
+
+    return `<ol style="font-family:system-ui,-apple-system,sans-serif;font-size:14px;line-height:1.8;padding-left:20px">\n${items}\n</ol>`;
 }
 
 export const route: Route = {
@@ -188,7 +209,6 @@ async function handler(ctx) {
         .toArray()
         .map((item) => {
             const [owner, name] = $(item).find('h2').text().split('/');
-            // GitHub shows e.g. "1,234 stars this week" / "567 stars today" at the bottom of each card
             const articleText = $(item).text();
             const match = articleText.match(/(\d[\d,]*)\s+stars?\s+(?:this\s+week|this\s+month|today)/i);
             const periodStars = match ? Number.parseInt(match[1].replaceAll(',', ''), 10) : 0;
@@ -208,6 +228,7 @@ async function handler(ctx) {
                     (repo, i) => `
                 _${i}: repository(owner: "${repo.owner}", name: "${repo.name}") {
                     nameWithOwner
+                    description
                     stargazerCount
                     forkCount
                     primaryLanguage { name }
@@ -219,39 +240,35 @@ async function handler(ctx) {
         },
     });
 
-    const repos: Repo[] = trendingRepos.map(({ periodStars }, i) => {
-        const r = repoData.data[`_${i}`] as any;
-        return {
-            nameWithOwner: r.nameWithOwner,
-            owner: r.nameWithOwner.split('/')[0],
-            name: r.nameWithOwner.split('/')[1],
-            lang: r.primaryLanguage?.name ?? null,
-            stars: r.stargazerCount,
-            forks: r.forkCount,
-            periodStars,
-        };
-    });
+    const repos: Repo[] = trendingRepos
+        .map(({ periodStars }, i) => {
+            const r = repoData.data[`_${i}`] as any;
+            return {
+                nameWithOwner: r.nameWithOwner,
+                owner: r.nameWithOwner.split('/')[0],
+                name: r.nameWithOwner.split('/')[1],
+                description: r.description ?? null,
+                lang: r.primaryLanguage?.name ?? null,
+                stars: r.stargazerCount,
+                forks: r.forkCount,
+                periodStars,
+            };
+        })
+        .toSorted((a, b) => b.periodStars - a.periodStars);
+
+    const now = new Date();
+    const periodKey = now.toISOString().slice(0, 10);
+
+    const svg = buildSvg(repos, since, rawLanguage, now);
+    const langSlug = rawLanguage.replaceAll(/[^a-z0-9-]/gi, '_');
+    const filePath = `trending-chart/${since}-${langSlug}-${spoken_language || 'any'}-${periodKey}.svg`;
+    const imageUrl = await uploadOrGetSvgUrl(filePath, svg, config.github.access_token);
 
     const label = rawLanguage === 'any' ? 'All Languages' : rawLanguage;
     const title = `GitHub Trending Chart · ${since} · ${label}`;
-    const svg = buildSvg(repos, since, rawLanguage);
-
-    // Stable guid within a period: daily=today, weekly=ISO week, monthly=year-month
-    const now = new Date();
-    const periodKey =
-        since === 'monthly'
-            ? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-            : since === 'weekly'
-              ? (() => {
-                    const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
-                    d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-                    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-                    const week = Math.ceil(((d.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7);
-                    return `${d.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
-                })()
-              : now.toISOString().slice(0, 10);
-
     const guid = `github-trending-chart-${since}-${rawLanguage}-${spoken_language}-${periodKey}`;
+    const textList = buildTextList(repos, since);
+    const description = `<img src="${imageUrl}" alt="${escHtml(title)}" style="max-width:100%"/>\n${textList}`;
 
     return {
         title,
@@ -260,7 +277,7 @@ async function handler(ctx) {
             {
                 guid,
                 title,
-                description: svg,
+                description,
                 pubDate: now,
                 link: trendingUrl,
             },
