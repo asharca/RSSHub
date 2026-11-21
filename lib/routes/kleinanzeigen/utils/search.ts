@@ -56,11 +56,11 @@ export const search = async (opts: {
     url.searchParams.append('posterType', '');
     url.searchParams.append('maxPrice', opts.maxPrice?.toString() || '');
     url.searchParams.append('minPrice', opts.minPrice?.toString() || '');
-    url.searchParams.append('buyNowEnabled', opts.minPrice ? 'true' : 'false');
+    url.searchParams.append('buyNowEnabled', opts.buyNowEnabled ? 'true' : 'false');
     url.searchParams.append('shippingCarrier', opts.shippingCarrier || '');
     url.searchParams.append('shipping', '');
 
-    const response = await ofetch(url.toString());
+    const response = await ofetch(url.href);
     const $ = load(response);
 
     const items = await parseListingPage($);
@@ -69,8 +69,9 @@ export const search = async (opts: {
         // channel title
         title: `Kleinanzeigen Offers: ${opts.query || opts.category} ${opts.minPrice || opts.maxPrice ? `${opts.minPrice || 0}€ - ${opts.maxPrice}` : ''}`,
         // channel link
-        link: url.toString(),
+        link: url.href,
         language: 'de',
+        sortItems: false,
         // each feed item
         item: items,
     };

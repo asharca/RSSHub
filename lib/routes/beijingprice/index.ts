@@ -1,30 +1,31 @@
 import { load } from 'cheerio';
 
-import type { Route } from '@/types';
+import type { DataItem, Language, Route } from '@/types';
 import cache from '@/utils/cache';
 import got from '@/utils/got';
-import { parseDate } from '@/utils/parse-date';
+import { getRouteLimit } from '@/utils/route-limit';
+import { parseDate } from '@/utils/time';
 
 export const handler = async (ctx) => {
     const { category = 'jgzx/xwzx' } = ctx.req.param();
-    const limit = ctx.req.query('limit') ? Number.parseInt(ctx.req.query('limit'), 10) : 15;
+    const limit = getRouteLimit(ctx, 15);
 
     const rootUrl = 'https://www.beijingprice.cn';
-    const currentUrl = new URL(category.endsWith('/') ? category : `${category}/`, rootUrl).href;
+    const currentUrl = `${rootUrl}/${category.endsWith('/') ? category : `${category}/`}`;
 
     const { data: response } = await got(currentUrl);
 
     const $ = load(response);
 
-    const language = $('html').prop('lang');
+    const language = $('html').prop('lang') as Language;
 
     let items = $('div.jgzx.rightcontent ul li')
         .slice(0, limit)
         .toArray()
-        .map((item) => {
-            item = $(item);
+        .map((item): DataItem => {
+            const $item = $(item);
 
-            const a = item.find('a');
+            const a = $item.find('a');
             const link = a.prop('href');
             const msg = a.prop('msg');
 
@@ -41,8 +42,8 @@ export const handler = async (ctx) => {
 
             return {
                 title,
-                pubDate: parseDate(item.contents().last().text()),
-                link: enclosureUrl ?? (link.startsWith('http') ? link : new URL(link, rootUrl).href),
+                pubDate: parseDate($item.contents().last().text()),
+                link: enclosureUrl ?? (link!.startsWith('http') ? link : new URL(link!, rootUrl).href),
                 language,
                 enclosure_url: enclosureUrl,
                 enclosure_type: enclosureType,
@@ -52,8 +53,10 @@ export const handler = async (ctx) => {
 
     items = await Promise.all(
         items.map((item) =>
-            cache.tryGet(item.link, async () => {
-                if (!item.link.includes('www.beijingprice.cn') || item.link.endsWith('.pdf')) {
+            cache.tryGet(item.link!, async () => {
+                const { protocol, hostname } = new URL(item.link!);
+                // only follow links on the site itself
+                if (!['http:', 'https:'].includes(protocol) || hostname !== 'www.beijingprice.cn' || item.link!.endsWith('.pdf')) {
                     return item;
                 }
 
@@ -86,7 +89,7 @@ export const handler = async (ctx) => {
         )
     );
 
-    const image = new URL($('a.header-logo img').prop('src'), rootUrl).href;
+    const image = new URL($('a.header-logo img').prop('src')!, rootUrl).href;
 
     return {
         title: $('title').text(),
@@ -136,12 +139,8 @@ export const route: Route = {
     },
     radar: [
         {
-            source: ['beijingprice.cn/:category?'],
-            target: (params) => {
-                const category = params.category;
-
-                return `/beijingprice${category ? `/${category}` : ''}`;
-            },
+            source: ['beijingprice.cn/*category', 'beijingprice.cn/'],
+            target: '/:category?',
         },
         {
             title: '价格资讯 - 新闻资讯',

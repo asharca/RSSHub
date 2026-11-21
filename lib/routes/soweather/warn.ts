@@ -4,8 +4,7 @@ import { config } from '@/config';
 import type { Data, DataItem, Route } from '@/types';
 import cache from '@/utils/cache';
 import ofetch from '@/utils/ofetch';
-import { parseDate } from '@/utils/parse-date';
-import timezone from '@/utils/timezone';
+import { parseDate } from '@/utils/time';
 
 const rootUrl = 'https://wx.soweather.com';
 const pageUrl = `${rootUrl}/wxapp/warn.jsp`;
@@ -72,7 +71,7 @@ function parseWarnings(script: string, variableName: string): RawWarning[] {
     const pattern = new RegExp(`var\\s+${variableName}\\s*=\\s*(\\[[\\s\\S]*?\\])\\s*(?=var\\s+\\w+\\s*=|$)`);
     const json = pattern.exec(script)?.[1];
 
-    return json ? (JSON.parse(json) as RawWarning[]) : [];
+    return json ? JSON.parse(json) : [];
 }
 
 function isRealWarning(warning: RawWarning): boolean {
@@ -84,7 +83,7 @@ function buildItem(warning: RawWarning, groupName: string): DataItem {
     const content = buildContent(warning);
     const guid = `${warning.district}-${warning.id}-${warning.yjid}`;
     const image = warning.icon ? `${rootUrl}/wxapp/images/icon/${warning.icon.replaceAll('-', '_')}` : undefined;
-    const updated = !warning.isActive && warning.jcsj ? timezone(parseDate(warning.jcsj, 'YYYY-MM-DD HH:mm'), 8) : undefined;
+    const updated = !warning.isActive && warning.jcsj ? parseDate(warning.jcsj, 'YYYY-MM-DD HH:mm', 8) : undefined;
 
     return {
         title,
@@ -93,12 +92,9 @@ function buildItem(warning: RawWarning, groupName: string): DataItem {
         description: content,
         content: {
             html: content,
-            text: content
-                .replaceAll(/<br\s*\/?>/gi, '\n')
-                .replaceAll(/<[^>]+>/g, '')
-                .trim(),
+            text: sanitizeHtml(content.replaceAll(/<br\s*\/?>/gi, '\n'), { allowedTags: [], allowedAttributes: {} }).trim(),
         },
-        pubDate: timezone(parseDate(warning.fbsj, 'YYYY-MM-DD HH:mm'), 8),
+        pubDate: parseDate(warning.fbsj, 'YYYY-MM-DD HH:mm', 8),
         updated,
         author: warning.yjfbdw,
         category: [groupName, warning.district, warning.name, warning.isActive ? '生效中' : '已解除'],
@@ -127,7 +123,7 @@ function buildContent(warning: RawWarning): string {
 
 function getWarningInfo(htmlword: string): string {
     return htmlword
-        .split('防御指引')[0]
+        .split('防御指引', 1)[0]
         .replaceAll(/(?:(?:\s|&nbsp;)*<br\s*\/?>)+\s*$/gi, '')
         .trim();
 }

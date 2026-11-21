@@ -1,12 +1,28 @@
 import type { Route } from '@/types';
 import got from '@/utils/got';
-import { parseDate } from '@/utils/parse-date';
+import { parseDate } from '@/utils/time';
 
 import { renderHTML } from './utils';
 
 export const route: Route = {
-    path: ['/', '/news'],
-    name: 'Unknown',
+    path: '/news',
+    categories: ['programming'],
+    example: '/gocn/news',
+    parameters: {},
+    features: {
+        requireConfig: false,
+        requirePuppeteer: false,
+        antiCrawler: false,
+        supportBT: false,
+        supportPodcast: false,
+        supportScihub: false,
+    },
+    radar: [
+        {
+            source: ['gocn.vip/'],
+        },
+    ],
+    name: '最新动态',
     maintainers: ['AtlanCI', 'CcccFz'],
     handler,
     url: 'gocn.vip/',

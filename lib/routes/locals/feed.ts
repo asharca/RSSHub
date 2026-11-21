@@ -1,11 +1,10 @@
-import vm from 'node:vm';
-
 import { config } from '@/config';
 import ConfigNotFoundError from '@/errors/types/config-not-found';
 import type { DataItem, Route } from '@/types';
 import cache from '@/utils/cache';
+import { evaluateScriptData } from '@/utils/evaluate-script';
 import ofetch from '@/utils/ofetch';
-import { parseDate } from '@/utils/parse-date';
+import { parseDate } from '@/utils/time';
 
 const contentFilterMap = {
     nonplus: 'regular_content',
@@ -71,6 +70,15 @@ type LocalsResponse = {
     data: LocalsPost[];
 };
 
+type FeedRequestArgs = {
+    communityId: number;
+    contentType: string | undefined;
+    filter: string;
+    order: string;
+    page: number;
+    pageSize: number;
+};
+
 type LocalsCommunityInfo = {
     description?: string;
     design?: {
@@ -129,11 +137,18 @@ function getRequestHeaders(session: string) {
 }
 
 function extractAssetUrls(html: string) {
-    return [...new Set([...html.matchAll(/\/_build\/assets\/[^"'\s>]+\.js/g)].map((match) => match[0]))];
+    return [
+        ...new Set(
+            html
+                .matchAll(/\/_build\/assets\/[^"'\s>]+\.js/g)
+                .toArray()
+                .map((match) => match[0])
+        ),
+    ];
 }
 
 function extractFeedActionId(asset: string) {
-    const symbol = asset.match(/getFeedPosts:([A-Za-z_$][\w$]*)/)?.[1];
+    const symbol = /getFeedPosts:([A-Za-z_$][\w$]*)/.exec(asset)?.[1];
     if (!symbol) {
         return;
     }
@@ -146,72 +161,47 @@ function extractFeedActionId(asset: string) {
     return `${match[1]}#${match[2]}`;
 }
 
-function createRequestBody(value: unknown) {
-    let nextIndex = 0;
+const encodeNumber = (value: number) => ({ t: 0, s: value });
+const encodeString = (value: string) => ({ t: 1, s: value });
 
-    const encode = (input: unknown): object => {
-        if (typeof input === 'number') {
-            return { t: 0, s: input };
-        }
-
-        if (typeof input === 'string') {
-            return { t: 1, s: input };
-        }
-
-        if (Array.isArray(input)) {
-            const i = nextIndex++;
-            return {
-                a: input.map((item) => encode(item)),
-                i,
-                l: input.length,
-                o: 0,
-                t: 9,
-            };
-        }
-
-        if (input && typeof input === 'object') {
-            const i = nextIndex++;
-            const entries = Object.entries(input).filter(([, item]) => item !== undefined);
-
-            return {
-                i,
-                o: 0,
-                p: {
-                    k: entries.map(([key]) => key),
-                    s: entries.length,
-                    v: entries.map(([, item]) => encode(item)),
-                },
-                t: 10,
-            };
-        }
-
-        throw new Error('Unsupported Locals request payload.');
+function createRequestBody(args: FeedRequestArgs) {
+    const fields = {
+        communityId: encodeNumber(args.communityId),
+        contentType: args.contentType === undefined ? undefined : encodeString(args.contentType),
+        filter: encodeString(args.filter),
+        order: encodeString(args.order),
+        page: encodeNumber(args.page),
+        pageSize: encodeNumber(args.pageSize),
     };
+    const entries = Object.entries(fields).filter(([, value]) => value !== undefined);
 
     return JSON.stringify({
         f: 31,
         m: [],
-        t: encode(value),
+        t: {
+            a: [
+                {
+                    i: 1,
+                    o: 0,
+                    p: {
+                        k: entries.map(([key]) => key),
+                        s: entries.length,
+                        v: entries.map(([, value]) => value),
+                    },
+                    t: 10,
+                },
+            ],
+            i: 0,
+            l: 1,
+            o: 0,
+            t: 9,
+        },
     });
 }
 
-function parseUnknownResponse<T>(body: string, instanceId: string): T {
-    const sandbox = {
-        $R: {},
-        self: {},
-    } as {
-        $R: Record<string, unknown[]>;
-        self: {
-            $R?: Record<string, unknown[]>;
-        };
-    };
-
-    sandbox.self.$R = sandbox.$R;
-
-    vm.createContext(sandbox);
-    vm.runInContext(body, sandbox, { timeout: 5000 });
-
-    const value = sandbox.self.$R?.[instanceId]?.[0] as T | undefined;
+async function parseUnknownResponse<T>(body: string, instanceId: string): Promise<T> {
+    // The response is seroval-serialized data, so read it instead of executing it. A full page of posts needs more than the default step budget.
+    const value = await evaluateScriptData<T | undefined>(body, `$R[${JSON.stringify(instanceId)}][0]`, 100000);
     if (!value) {
         throw new Error('Unable to decode the Locals server response.');
     }
@@ -226,10 +216,10 @@ function extractCommunityInfo(html: string, community: string) {
     }
 
     const context = html.slice(Math.max(0, markerIndex - 200), markerIndex + 1200);
-    const idMatch = context.match(/id:(\d+)/);
-    const titleMatch = context.match(/title:"([^"]+)"/);
-    const descriptionMatch = context.match(/description:"([^"]*)"/);
-    const imageMatch = context.match(/image:\$R\[\d+\]=\{big:"([^"]*)",thumb:"([^"]*)"/);
+    const idMatch = /id:(\d+)/.exec(context);
+    const titleMatch = /title:"([^"]+)"/.exec(context);
+    const descriptionMatch = /description:"([^"]*)"/.exec(context);
+    const imageMatch = /image:\$R\[\d+\]=\{big:"([^"]*)",thumb:"([^"]*)"/.exec(context);
 
     if (!idMatch || !titleMatch) {
         throw new Error('Unable to resolve the Locals community metadata.');
@@ -250,7 +240,7 @@ function extractCommunityInfo(html: string, community: string) {
 }
 
 function fetchContentPage(community: string, session: string) {
-    return cache.tryGet(`locals:content-page:${community}`, () => ofetch(`${rootUrl}/${community}/feed?mode=content`, { headers: getRequestHeaders(session) }));
+    return cache.tryGet(`locals:content-page:${community}`, () => ofetch(`${rootUrl}/${encodeURIComponent(community)}/feed?mode=content`, { headers: getRequestHeaders(session) }));
 }
 
 function resolveActionIds(community: string, session: string) {
@@ -323,7 +313,7 @@ function mapPostToItem(post: LocalsPost): DataItem | null {
 }
 
 function parseOptions(option1: string | undefined, option2: string | undefined) {
-    const values = [option1, option2].filter(Boolean) as string[];
+    const values = [option1, option2].filter((value): value is string => Boolean(value));
     const hasFilter = (value: string): value is ContentFilter => Object.hasOwn(contentFilterMap, value);
     const hasContentType = (value: string): value is ContentType => Object.hasOwn(contentTypeMap, value);
     const filter = values.find((value) => hasFilter(value));
@@ -340,7 +330,7 @@ function parseOptions(option1: string | undefined, option2: string | undefined) 
     };
 }
 
-async function requestServerFunction<T>(session: string, id: string, key: string, args: unknown[]) {
+async function requestServerFunction<T>(session: string, id: string, key: string, args: FeedRequestArgs) {
     const response = await ofetch.raw(`${rootUrl}/_server`, {
         body: createRequestBody(args),
         headers: {
@@ -357,7 +347,7 @@ async function requestServerFunction<T>(session: string, id: string, key: string
         throw new Error(`Unable to access the Locals server function (${response.status}).`);
     }
 
-    return parseUnknownResponse<T>(response._data, key);
+    return parseUnknownResponse<T>(response._data!, key);
 }
 
 function fetchCommunityInfo(community: string, session: string) {
@@ -374,16 +364,14 @@ async function fetchFeedData(communityId: number, community: string, session: st
     const responses = await Promise.all(
         filters.map((currentFilter) =>
             cache.tryGet(`locals:data:${communityId}:${community}:${currentFilter}:${contentType ?? 'all'}`, () =>
-                requestServerFunction<LocalsResponse>(session, serverId, `server-fn:rsshub-${community}-${currentFilter}-${contentType ?? 'all'}`, [
-                    {
-                        communityId,
-                        contentType,
-                        filter: currentFilter,
-                        order: 'recent',
-                        page: 1,
-                        pageSize: 20,
-                    },
-                ])
+                requestServerFunction<LocalsResponse>(session, serverId, `server-fn:rsshub-${community}-${currentFilter}-${contentType ?? 'all'}`, {
+                    communityId,
+                    contentType,
+                    filter: currentFilter,
+                    order: 'recent',
+                    page: 1,
+                    pageSize: 20,
+                })
             )
         )
     );
@@ -403,15 +391,16 @@ async function fetchFeedData(communityId: number, community: string, session: st
             }
 
             const existing = items.get(item.link);
-            if (existing) {
-                existing.category = [...new Set([...(existing.category ?? []), ...(item.category ?? [])])];
-                existing.description = existing.description || item.description;
-                existing.itunes_item_image = existing.itunes_item_image || item.itunes_item_image;
+            if (!existing) {
+                continue;
             }
+            existing.category = [...new Set([...[existing.category ?? []].flat(), ...[item.category ?? []].flat()])];
+            existing.description ||= item.description;
+            existing.itunes_item_image ||= item.itunes_item_image;
         }
     }
 
-    return [...items.values()];
+    return items.values().toArray();
 }
 
 async function handler(ctx) {

@@ -2,21 +2,32 @@ import 'dotenv/config';
 
 import { ofetch } from 'ofetch';
 
+import type { HostRateLimits } from '@/utils/host-rate-limit';
+import { parseHostRateLimits } from '@/utils/host-rate-limit';
+
 type ConfigEnvKeys =
     // App config
     | 'DISALLOW_ROBOT'
     | 'ENABLE_CLUSTER'
     | 'IS_PACKAGE'
+    | 'USER_ROUTES_PATH'
     | 'NODE_NAME'
     | 'PLAYWRIGHT_WS_ENDPOINT'
     | 'PUPPETEER_WS_ENDPOINT'
+    | 'PLAYWRIGHT_CDP_ENDPOINT'
     | 'CHROMIUM_EXECUTABLE_PATH'
+    | 'CI_EN_COOKIE'
     // Network
     | 'PORT'
+    | 'SOCKET'
     | 'LISTEN_INADDR_ANY'
     | 'DISABLE_IPV6'
     | 'REQUEST_RETRY'
     | 'REQUEST_TIMEOUT'
+    | 'REQUEST_MAX_RESPONSE_SIZE'
+    | 'REQUEST_AUTO_SELECT_FAMILY'
+    | 'REQUEST_RATE_LIMITS'
+    | 'WORDPRESS_ALLOWED_DOMAINS'
     | 'UA'
     | 'NO_RANDOM_UA'
     | 'ALLOW_ORIGIN'
@@ -31,15 +42,12 @@ type ConfigEnvKeys =
     | 'CACHE_HTTP_TOKEN'
     // Proxy
     | 'PROXY_URI'
-    | 'PROXY_URIS'
     | 'PROXY_PROTOCOL'
     | 'PROXY_HOST'
     | 'PROXY_PORT'
     | 'PROXY_AUTH'
     | 'PROXY_URL_REGEX'
     | 'PROXY_STRATEGY'
-    | 'PROXY_FAILOVER_TIMEOUT'
-    | 'PROXY_HEALTH_CHECK_INTERVAL'
     | 'PAC_URI'
     | 'PAC_SCRIPT'
     // Access control
@@ -66,6 +74,7 @@ type ConfigEnvKeys =
     | 'DISABLE_NSFW'
     | 'SUFFIX'
     | 'TITLE_LENGTH_LIMIT'
+    | 'FORMAT'
     // OpenAI
     | 'OPENAI_API_KEY'
     | 'OPENAI_MODEL'
@@ -81,6 +90,7 @@ type ConfigEnvKeys =
     | 'FOLLOW_PRICE'
     | 'FOLLOW_USER_LIMIT'
     // Route-specific (dynamic cookies with prefixes)
+    | 'BAIDU_COOKIE'
     | `BILIBILI_COOKIE_${string}`
     | 'BILIBILI_DM_IMG_LIST'
     | 'BILIBILI_DM_IMG_INTER'
@@ -90,8 +100,13 @@ type ConfigEnvKeys =
     | 'BTBYR_HOST'
     | 'BTBYR_COOKIE'
     | 'BUPT_PORTAL_COOKIE'
+    | 'BUKENAVI_EMAIL'
+    | 'BUKENAVI_PASSWORD'
     | 'CAIXIN_COOKIE'
+    | 'CARA_COOKIE'
     | 'CIVITAI_COOKIE'
+    | 'COOMER_ASSETS_URL'
+    | 'COOMER_ROOT_URL'
     | 'DIANPING_COOKIE'
     | 'DIDA365_USERNAME'
     | 'DIDA365_PASSWORD'
@@ -100,6 +115,7 @@ type ConfigEnvKeys =
     | `DISCUZ_COOKIE_${string}`
     | 'DISQUS_API_KEY'
     | 'DOUBAN_COOKIE'
+    | 'DOUYIN_COOKIE'
     | 'EH_IPB_MEMBER_ID'
     | 'EH_IPB_PASS_HASH'
     | 'EH_SK'
@@ -107,7 +123,9 @@ type ConfigEnvKeys =
     | 'EH_STAR'
     | 'EH_IMG_PROXY'
     | `EMAIL_CONFIG_${string}`
+    | 'ETHERSCAN_API_KEY'
     | 'F95ZONE_COOKIE'
+    | 'FACEBOOK_COOKIE'
     | 'FANBOX_SESSION_ID'
     | 'FANFOU_CONSUMER_KEY'
     | 'FANFOU_CONSUMER_SECRET'
@@ -126,14 +144,14 @@ type ConfigEnvKeys =
     | 'HUITUN_COOKIE'
     | 'INFZM_COOKIE'
     | 'INITIUM_MEMBER_COOKIE'
-    | 'IG_USERNAME'
-    | 'IG_PASSWORD'
-    | 'IG_PROXY'
     | 'IG_COOKIE'
+    | 'INSTAGRAM_COOKIE'
     | 'IWARA_USERNAME'
     | 'IWARA_PASSWORD'
     | 'JAVDB_SESSION'
     | 'JUMEILI_COOKIE'
+    | 'KEMONO_ASSETS_URL'
+    | 'KEMONO_ROOT_URL'
     | 'KEYLOL_COOKIE'
     | 'LASTFM_API_KEY'
     | 'LOCALS_SESSION'
@@ -141,6 +159,7 @@ type ConfigEnvKeys =
     | 'LORIENTLEJOUR_TOKEN'
     | 'LORIENTLEJOUR_USERNAME'
     | 'LORIENTLEJOUR_PASSWORD'
+    | 'LOWENDTALK_COOKIE'
     | 'MALAYSIAKINI_EMAIL'
     | 'MALAYSIAKINI_PASSWORD'
     | 'MALAYSIAKINI_REFRESHTOKEN'
@@ -158,6 +177,7 @@ type ConfigEnvKeys =
     | 'MIHOYO_COOKIE'
     | 'MINIFLUX_INSTANCE'
     | 'MINIFLUX_TOKEN'
+    | 'MISSKEY_API_HOST'
     | 'MISSKEY_ACCESS_TOKEN'
     | 'MIXI2_AUTH_TOKEN'
     | 'MIXI2_AUTH_KEY'
@@ -169,6 +189,7 @@ type ConfigEnvKeys =
     | 'NHENTAI_USERNAME'
     | 'NHENTAI_PASSWORD'
     | 'NOTION_TOKEN'
+    | 'ONLYFANS_COOKIE'
     | 'PATREON_SESSION_ID'
     | 'PIANYUAN_COOKIE'
     | 'PIXABAY_KEY'
@@ -178,8 +199,10 @@ type ConfigEnvKeys =
     | 'PIXIV_BYPASS_DOH'
     | 'PIXIV_IMG_PROXY'
     | 'PKUBBS_COOKIE'
+    | 'PRODUCTHUNT_ACCESS_TOKEN'
     | 'QINGTING_ID'
     | 'READWISE_ACCESS_TOKEN'
+    | 'REUTERS_AUTH_TOKEN'
     | 'SARABA1ST_COOKIE'
     | 'SARABA1ST_HOST'
     | 'SEHUATANG_COOKIE'
@@ -191,10 +214,13 @@ type ConfigEnvKeys =
     | 'SIS001_BASE_URL'
     | 'SKEB_BEARER_TOKEN'
     | 'SORRYCC_COOKIES'
+    | 'SOUTHPLUS_COOKIE'
+    | 'SOUTHPLUS_UA'
     | 'SPOTIFY_CLIENT_ID'
     | 'SPOTIFY_CLIENT_SECRET'
     | 'SPOTIFY_REFRESHTOKEN'
     | 'SSPAI_BEARERTOKEN'
+    | 'TAOGUBA_COOKIE'
     | 'TELEGRAM_TOKEN'
     | 'TELEGRAM_SESSION'
     | 'TELEGRAM_API_ID'
@@ -232,7 +258,6 @@ type ConfigEnvKeys =
     | 'XIAOHONGSHU_PROXY'
     | 'XIMALAYA_TOKEN'
     | 'XSIJISHE_COOKIE'
-    | 'XSIJISHE_USER_AGENT'
     | 'XUEQIU_COOKIES'
     | 'YAMIBO_SALT'
     | 'YAMIBO_AUTH'
@@ -254,21 +279,27 @@ export type ConfigEnv = Partial<Record<ConfigEnvKeys, string | undefined>>;
 let envs: ConfigEnv = process.env;
 
 export type Config = {
+    userRoutesPath?: string;
     // app config
     disallowRobot: boolean;
     enableCluster?: string;
     isPackage: boolean;
     nodeName?: string;
     playwrightWSEndpoint?: string;
+    playwrightCDPEndpoint?: string;
     chromiumExecutablePath?: string;
     // network
     connect: {
         port: number;
+        socket?: string;
     };
     listenInaddrAny: boolean;
     disableIPv6: boolean;
     requestRetry: number;
     requestTimeout: number;
+    requestMaxResponseSize: number;
+    requestAutoSelectFamily?: boolean;
+    requestRateLimits: HostRateLimits;
     ua: string;
     isDefaultUA: boolean;
     trueUA: string;
@@ -292,7 +323,6 @@ export type Config = {
     };
     // proxy
     proxyUri?: string;
-    proxyUris?: string[];
     proxy: {
         protocol?: string;
         host?: string;
@@ -300,8 +330,6 @@ export type Config = {
         auth?: string;
         url_regex: string;
         strategy: 'on_retry' | 'all';
-        failoverTimeout?: number;
-        healthCheckInterval?: number;
     };
     pacUri?: string;
     pacScript?: string;
@@ -338,6 +366,7 @@ export type Config = {
     };
     suffix?: string;
     titleLengthLimit: number;
+    format: string;
     openai: {
         apiKey?: string;
         model?: string;
@@ -356,6 +385,9 @@ export type Config = {
     };
 
     // Route-specific Configurations
+    baidu: {
+        cookie?: string;
+    };
     bilibili: {
         cookies: Record<string, string | undefined>;
         dmImgList?: string;
@@ -370,14 +402,28 @@ export type Config = {
         host?: string;
         cookies?: string;
     };
+    bukenavi: {
+        email?: string;
+        password?: string;
+    };
     bupt: {
         portal_cookie?: string;
     };
     caixin: {
         cookie?: string;
     };
+    cara: {
+        cookie?: string;
+    };
     civitai: {
         cookie?: string;
+    };
+    ciEn: {
+        cookie?: string;
+    };
+    coomer: {
+        assetsUrl: string;
+        rootUrl: string;
     };
     dianping: {
         cookie?: string;
@@ -401,6 +447,9 @@ export type Config = {
     douban: {
         cookie?: string;
     };
+    douyin: {
+        cookie?: string;
+    };
     ehentai: {
         ipb_member_id?: string;
         ipb_pass_hash?: string;
@@ -412,7 +461,13 @@ export type Config = {
     email: {
         config: Record<string, string | undefined>;
     };
+    etherscan: {
+        apiKey?: string;
+    };
     f95zone: {
+        cookie?: string;
+    };
+    facebook: {
         cookie?: string;
     };
     fanbox: {
@@ -460,9 +515,6 @@ export type Config = {
         memberCookie?: string;
     };
     instagram: {
-        username?: string;
-        password?: string;
-        proxy?: string;
         cookie?: string;
     };
     iwara: {
@@ -474,6 +526,10 @@ export type Config = {
     };
     jumeili: {
         cookie?: string;
+    };
+    kemono: {
+        assetsUrl: string;
+        rootUrl: string;
     };
     keylol: {
         cookie?: string;
@@ -494,6 +550,9 @@ export type Config = {
         token?: string;
         username?: string;
         password?: string;
+    };
+    lowendtalk: {
+        cookie?: string;
     };
     malaysiakini: {
         email?: string;
@@ -527,6 +586,7 @@ export type Config = {
         token?: string;
     };
     misskey: {
+        apiHost: string;
         accessToken?: string;
     };
     mixi2: {
@@ -553,6 +613,9 @@ export type Config = {
     notion: {
         key?: string;
     };
+    onlyfans: {
+        cookie?: string;
+    };
     patreon: {
         sessionId?: string;
     };
@@ -572,11 +635,17 @@ export type Config = {
     pkubbs: {
         cookie?: string;
     };
+    producthunt: {
+        accessToken?: string;
+    };
     qingting: {
         id?: string;
     };
     readwise: {
         accessToken?: string;
+    };
+    reuters: {
+        authToken?: string;
     };
     saraba1st: {
         cookie?: string;
@@ -604,6 +673,10 @@ export type Config = {
     sorrycc: {
         cookie?: string;
     };
+    southplus: {
+        cookie?: string;
+        ua?: string;
+    };
     spotify: {
         clientId?: string;
         clientSecret?: string;
@@ -611,6 +684,9 @@ export type Config = {
     };
     sspai: {
         bearertoken?: string;
+    };
+    taoguba: {
+        cookie?: string;
     };
     telegram: {
         token?: string;
@@ -661,6 +737,7 @@ export type Config = {
         cookie?: string;
     };
     wordpress: {
+        allowedDomains: string[];
         cdnUrl?: string;
     };
     xiaoyuzhou: {
@@ -676,7 +753,6 @@ export type Config = {
     };
     xsijishe: {
         cookie?: string;
-        userAgent?: string;
     };
     xueqiu: {
         cookies?: string;
@@ -709,19 +785,28 @@ export type Config = {
     };
 };
 
-const value: Config | Record<string, any> = {};
+const value = {} as Config;
 
 const TRUE_UA = 'RSSHub/1.0 (+http://github.com/DIYgod/RSSHub; like FeedFetcher-Google)';
 
 const toBoolean = (value: string | undefined, defaultValue: boolean) => {
     if (value === undefined) {
         return defaultValue;
-    } else {
-        return value === '' || value === '0' || value === 'false' ? false : !!value;
     }
+    return ['', '0', 'false'].includes(value) ? false : !!value;
 };
 
 const toInt = (value: string | undefined, defaultValue?: number) => (value === undefined ? defaultValue : Number.parseInt(value));
+
+const getAssetsUrl = (rootUrl: string, assetsUrl?: string) => {
+    if (assetsUrl) {
+        return assetsUrl.replace(/\/+$/, '');
+    }
+
+    const url = new URL(rootUrl);
+    url.hostname = `img.${url.hostname}`;
+    return url.href.replace(/\/+$/, '');
+};
 
 const calculateValue = () => {
     const bilibili_cookies: Record<string, string | undefined> = {};
@@ -754,18 +839,24 @@ const calculateValue = () => {
         disallowRobot: toBoolean(envs.DISALLOW_ROBOT, false),
         enableCluster: toBoolean(envs.ENABLE_CLUSTER, false),
         isPackage: !!envs.IS_PACKAGE,
+        userRoutesPath: envs.USER_ROUTES_PATH,
         nodeName: envs.NODE_NAME,
         playwrightWSEndpoint: envs.PLAYWRIGHT_WS_ENDPOINT ?? envs.PUPPETEER_WS_ENDPOINT,
+        playwrightCDPEndpoint: envs.PLAYWRIGHT_CDP_ENDPOINT,
         chromiumExecutablePath: envs.CHROMIUM_EXECUTABLE_PATH,
         // network
         connect: {
             port: toInt(envs.PORT, 1200), // 监听端口
+            socket: envs.SOCKET || undefined, // listen on a unix socket instead of a TCP port
         },
         listenInaddrAny: toBoolean(envs.LISTEN_INADDR_ANY, true), // 是否允许公网连接，取值 0 1
         disableIPv6: toBoolean(envs.DISABLE_IPV6, false),
         requestRetry: toInt(envs.REQUEST_RETRY, 2), // 请求失败重试次数
         requestTimeout: toInt(envs.REQUEST_TIMEOUT, 30000), // Milliseconds to wait for the server to end the response before aborting the request
-        ua: envs.UA || (toBoolean(envs.NO_RANDOM_UA, false) ? TRUE_UA : 'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_6_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36'),
+        requestMaxResponseSize: toInt(envs.REQUEST_MAX_RESPONSE_SIZE, 16 * 1024 * 1024), // Bytes a response body may have after its Content-Encoding is decoded
+        requestAutoSelectFamily: envs.REQUEST_AUTO_SELECT_FAMILY === undefined ? undefined : toBoolean(envs.REQUEST_AUTO_SELECT_FAMILY, false),
+        requestRateLimits: parseHostRateLimits(envs.REQUEST_RATE_LIMITS),
+        ua: envs.UA || (toBoolean(envs.NO_RANDOM_UA, false) ? TRUE_UA : 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36'),
         isDefaultUA: !envs.UA && !toBoolean(envs.NO_RANDOM_UA, false),
         trueUA: TRUE_UA,
         allowOrigin: envs.ALLOW_ORIGIN,
@@ -789,11 +880,6 @@ const calculateValue = () => {
         },
         // proxy
         proxyUri: envs.PROXY_URI,
-        proxyUris: envs.PROXY_URIS
-            ? envs.PROXY_URIS.split(',')
-                  .map((uri) => uri.trim())
-                  .filter(Boolean)
-            : undefined,
         proxy: {
             protocol: envs.PROXY_PROTOCOL,
             host: envs.PROXY_HOST,
@@ -801,8 +887,6 @@ const calculateValue = () => {
             auth: envs.PROXY_AUTH,
             url_regex: envs.PROXY_URL_REGEX || '.*',
             strategy: envs.PROXY_STRATEGY || 'all', // all / on_retry
-            failoverTimeout: toInt(envs.PROXY_FAILOVER_TIMEOUT, 5000),
-            healthCheckInterval: toInt(envs.PROXY_HEALTH_CHECK_INTERVAL, 60000),
         },
         pacUri: envs.PAC_URI,
         pacScript: envs.PAC_SCRIPT,
@@ -840,6 +924,7 @@ const calculateValue = () => {
         },
         suffix: envs.SUFFIX,
         titleLengthLimit: toInt(envs.TITLE_LENGTH_LIMIT, 150),
+        format: envs.FORMAT || 'rss',
         openai: {
             apiKey: envs.OPENAI_API_KEY,
             model: envs.OPENAI_MODEL || 'gpt-3.5-turbo-16k',
@@ -858,6 +943,9 @@ const calculateValue = () => {
         },
 
         // Route-specific Configurations
+        baidu: {
+            cookie: envs.BAIDU_COOKIE,
+        },
         bilibili: {
             cookies: bilibili_cookies,
             dmImgList: envs.BILIBILI_DM_IMG_LIST,
@@ -875,11 +963,25 @@ const calculateValue = () => {
         bupt: {
             portal_cookie: envs.BUPT_PORTAL_COOKIE,
         },
+        bukenavi: {
+            email: envs.BUKENAVI_EMAIL,
+            password: envs.BUKENAVI_PASSWORD,
+        },
         caixin: {
             cookie: envs.CAIXIN_COOKIE,
         },
+        cara: {
+            cookie: envs.CARA_COOKIE,
+        },
         civitai: {
             cookie: envs.CIVITAI_COOKIE,
+        },
+        ciEn: {
+            cookie: envs.CI_EN_COOKIE,
+        },
+        coomer: {
+            assetsUrl: getAssetsUrl(envs.COOMER_ROOT_URL || 'https://coomer.st', envs.COOMER_ASSETS_URL),
+            rootUrl: (envs.COOMER_ROOT_URL || 'https://coomer.st').replace(/\/+$/, ''),
         },
         dianping: {
             cookie: envs.DIANPING_COOKIE,
@@ -903,6 +1005,9 @@ const calculateValue = () => {
         douban: {
             cookie: envs.DOUBAN_COOKIE,
         },
+        douyin: {
+            cookie: envs.DOUYIN_COOKIE,
+        },
         ehentai: {
             ipb_member_id: envs.EH_IPB_MEMBER_ID,
             ipb_pass_hash: envs.EH_IPB_PASS_HASH,
@@ -914,8 +1019,14 @@ const calculateValue = () => {
         email: {
             config: email_config,
         },
+        etherscan: {
+            apiKey: envs.ETHERSCAN_API_KEY,
+        },
         f95zone: {
             cookie: envs.F95ZONE_COOKIE,
+        },
+        facebook: {
+            cookie: envs.FACEBOOK_COOKIE,
         },
         fanbox: {
             session: envs.FANBOX_SESSION_ID,
@@ -962,10 +1073,7 @@ const calculateValue = () => {
             memberCookie: envs.INITIUM_MEMBER_COOKIE,
         },
         instagram: {
-            username: envs.IG_USERNAME,
-            password: envs.IG_PASSWORD,
-            proxy: envs.IG_PROXY,
-            cookie: envs.IG_COOKIE,
+            cookie: envs.INSTAGRAM_COOKIE ?? envs.IG_COOKIE,
         },
         iwara: {
             username: envs.IWARA_USERNAME,
@@ -976,6 +1084,10 @@ const calculateValue = () => {
         },
         jumeili: {
             cookie: envs.JUMEILI_COOKIE,
+        },
+        kemono: {
+            assetsUrl: getAssetsUrl(envs.KEMONO_ROOT_URL || 'https://kemono.cr', envs.KEMONO_ASSETS_URL),
+            rootUrl: (envs.KEMONO_ROOT_URL || 'https://kemono.cr').replace(/\/+$/, ''),
         },
         keylol: {
             cookie: envs.KEYLOL_COOKIE,
@@ -996,6 +1108,9 @@ const calculateValue = () => {
             token: envs.LORIENTLEJOUR_TOKEN,
             username: envs.LORIENTLEJOUR_USERNAME,
             password: envs.LORIENTLEJOUR_PASSWORD,
+        },
+        lowendtalk: {
+            cookie: envs.LOWENDTALK_COOKIE,
         },
         malaysiakini: {
             email: envs.MALAYSIAKINI_EMAIL,
@@ -1029,6 +1144,7 @@ const calculateValue = () => {
             token: envs.MINIFLUX_TOKEN || '',
         },
         misskey: {
+            apiHost: envs.MISSKEY_API_HOST || 'misskey.io',
             accessToken: envs.MISSKEY_ACCESS_TOKEN,
         },
         mixi2: {
@@ -1055,6 +1171,9 @@ const calculateValue = () => {
         notion: {
             key: envs.NOTION_TOKEN,
         },
+        onlyfans: {
+            cookie: envs.ONLYFANS_COOKIE,
+        },
         patreon: {
             sessionId: envs.PATREON_SESSION_ID,
         },
@@ -1074,11 +1193,17 @@ const calculateValue = () => {
         pkubbs: {
             cookie: envs.PKUBBS_COOKIE,
         },
+        producthunt: {
+            accessToken: envs.PRODUCTHUNT_ACCESS_TOKEN,
+        },
         qingting: {
             id: envs.QINGTING_ID,
         },
         readwise: {
             accessToken: envs.READWISE_ACCESS_TOKEN,
+        },
+        reuters: {
+            authToken: envs.REUTERS_AUTH_TOKEN,
         },
         saraba1st: {
             cookie: envs.SARABA1ST_COOKIE,
@@ -1106,6 +1231,10 @@ const calculateValue = () => {
         sorrycc: {
             cookie: envs.SORRYCC_COOKIES,
         },
+        southplus: {
+            cookie: envs.SOUTHPLUS_COOKIE,
+            ua: envs.SOUTHPLUS_UA,
+        },
         spotify: {
             clientId: envs.SPOTIFY_CLIENT_ID,
             clientSecret: envs.SPOTIFY_CLIENT_SECRET,
@@ -1114,15 +1243,18 @@ const calculateValue = () => {
         sspai: {
             bearertoken: envs.SSPAI_BEARERTOKEN,
         },
+        taoguba: {
+            cookie: envs.TAOGUBA_COOKIE,
+        },
         telegram: {
             token: envs.TELEGRAM_TOKEN,
             session: envs.TELEGRAM_SESSION,
-            apiId: envs.TELEGRAM_API_ID,
+            apiId: toInt(envs.TELEGRAM_API_ID),
             apiHash: envs.TELEGRAM_API_HASH,
-            maxConcurrentDownloads: envs.TELEGRAM_MAX_CONCURRENT_DOWNLOADS,
+            maxConcurrentDownloads: toInt(envs.TELEGRAM_MAX_CONCURRENT_DOWNLOADS),
             proxy: {
                 host: envs.TELEGRAM_PROXY_HOST,
-                port: envs.TELEGRAM_PROXY_PORT,
+                port: toInt(envs.TELEGRAM_PROXY_PORT),
                 secret: envs.TELEGRAM_PROXY_SECRET,
             },
         },
@@ -1163,6 +1295,10 @@ const calculateValue = () => {
             cookie: envs.WENKU8_COOKIE,
         },
         wordpress: {
+            allowedDomains:
+                envs.WORDPRESS_ALLOWED_DOMAINS?.split(',')
+                    .map((domain) => domain.trim().toLowerCase())
+                    .filter(Boolean) ?? [],
             cdnUrl: envs.WORDPRESS_CDN,
         },
         xiaoyuzhou: {
@@ -1178,7 +1314,6 @@ const calculateValue = () => {
         },
         xsijishe: {
             cookie: envs.XSIJISHE_COOKIE,
-            user_agent: envs.XSIJISHE_USER_AGENT,
         },
         xueqiu: {
             cookies: envs.XUEQIU_COOKIES,
@@ -1211,34 +1346,32 @@ const calculateValue = () => {
         },
     };
 
-    for (const name in _value) {
-        value[name] = _value[name];
-    }
+    Object.assign(value, _value);
 };
 calculateValue();
-(async () => {
-    if (envs.REMOTE_CONFIG) {
-        const { default: logger } = await import('@/utils/logger');
-        try {
-            const data = await ofetch(envs.REMOTE_CONFIG, {
-                headers: {
-                    Authorization: `Basic ${envs.REMOTE_CONFIG_AUTH}`,
-                },
-            });
-            if (data) {
-                envs = Object.assign(envs, data);
-                calculateValue();
-                logger.info('Remote config loaded.');
-            } else {
-                logger.error('Remote config load failed.');
-            }
-        } catch (error) {
-            logger.error('Remote config load failed.', error);
+void (async () => {
+    if (!envs.REMOTE_CONFIG) {
+        return;
+    }
+    const { default: logger } = await import('@/utils/logger');
+    try {
+        const data = await ofetch(envs.REMOTE_CONFIG, {
+            headers: {
+                Authorization: `Basic ${envs.REMOTE_CONFIG_AUTH}`,
+            },
+        });
+        if (data) {
+            envs = Object.assign(envs, data);
+            calculateValue();
+            logger.info('Remote config loaded.');
+        } else {
+            logger.error('Remote config load failed.');
         }
+    } catch (error) {
+        logger.error('Remote config load failed.', error);
     }
 })();
 
-// @ts-expect-error value is set
 export const config: Config = value;
 
 export const setConfig = (env: ConfigEnv) => {

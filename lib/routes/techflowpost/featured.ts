@@ -1,5 +1,6 @@
 import type { Route } from '@/types';
 import { ViewType } from '@/types';
+import { getRouteLimit } from '@/utils/route-limit';
 
 import { getArticleItems, rootUrl } from './utils';
 
@@ -33,7 +34,7 @@ export const route: Route = {
 |      | 2040            | 2046     | 2047     | 2045     | 2044     | 2043     | 2042    | 2041     | 2039            | 2033            | 2032     | 2031       |`,
 };
 
-const categoryMap: Record<string, string> = {
+const categoryMap = {
     '2040': '行业 & 项目观察',
     '2046': '项目简介',
     '2047': '项目动态',
@@ -50,14 +51,14 @@ const categoryMap: Record<string, string> = {
 
 async function handler(ctx) {
     const category = ctx.req.param('category') ?? '';
-    const limit = ctx.req.query('limit') ?? 50;
+    const limit = getRouteLimit(ctx, 50);
     const currentUrl = `${rootUrl}/zh-CN/article`;
     const items = await getArticleItems({
         category,
         limit,
     });
 
-    const categoryName = category && categoryMap[category] ? `（${categoryMap[category]}）` : '';
+    const categoryName = category && Object.hasOwn(categoryMap, category) ? `（${categoryMap[category]}）` : '';
 
     return {
         title: `深潮TechFlow - 精选文章${categoryName}`,

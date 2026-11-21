@@ -2,7 +2,7 @@ import { load } from 'cheerio';
 
 import type { Route } from '@/types';
 import got from '@/utils/got';
-import { parseDate } from '@/utils/parse-date';
+import { parseDate } from '@/utils/time';
 
 export const route: Route = {
     path: '/announce',
@@ -35,7 +35,7 @@ async function handler() {
     });
 
     const $ = load(htmlString);
-    const announceList = [];
+    const announceList: any[] = [];
 
     $('.mp_news_list > .mp_news_item').each((_, el) => {
         const $item = $(el);
@@ -44,9 +44,8 @@ async function handler() {
         const title = $item.find('strong').text();
 
         announceList.push({
-            title: `${time} ${title}`,
+            title,
             link: `https://mp.weixin.qq.com${$link.attr('href')}`,
-            description: title,
             pubDate: parseDate(time),
         });
     });

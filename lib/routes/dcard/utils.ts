@@ -4,13 +4,11 @@ const ProcessFeed = async (items, cookies, context, limit, cache) => {
     let newCookies = [];
     const result = await pMap(
         items.slice(0, limit),
-        async (i) => {
+        async (i: { id: number; forumAlias: string; description?: string }) => {
             const url = `https://www.dcard.tw/service/api/v2/posts/${i.id}`;
             const content = await cache.tryGet(`dcard:${i.id}`, async () => {
-                let response;
-                // try catch 处理被删除的帖子
+                const page = await context.newPage();
                 try {
-                    const page = await context.newPage();
                     await page.route('**/*', (route) => {
                         const request = route.request();
                         request.resourceType() === 'document' || request.resourceType() === 'script' || request.resourceType() === 'fetch' || request.resourceType() === 'xhr' ? route.continue() : route.abort();
@@ -21,9 +19,8 @@ const ProcessFeed = async (items, cookies, context, limit, cache) => {
                     await page.context().addCookies(cookies);
                     await page.goto(url);
                     await page.waitForSelector('body > pre');
-                    response = await page.evaluate(() => document.querySelector('body > pre').textContent);
+                    const response = await page.evaluate(() => document.querySelector('body > pre')!.textContent);
                     newCookies = await page.context().cookies();
-                    await page.close();
 
                     const data = JSON.parse(response);
                     let body = data.content;
@@ -34,6 +31,8 @@ const ProcessFeed = async (items, cookies, context, limit, cache) => {
                     return body;
                 } catch {
                     return '';
+                } finally {
+                    await page.close();
                 }
             });
 

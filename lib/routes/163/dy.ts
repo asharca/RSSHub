@@ -1,8 +1,6 @@
 import type { Route } from '@/types';
-import cache from '@/utils/cache';
 import got from '@/utils/got';
-import { parseDate } from '@/utils/parse-date';
-import timezone from '@/utils/timezone';
+import { parseDate } from '@/utils/time';
 
 import { parseDyArticle } from './utils';
 
@@ -35,12 +33,12 @@ async function handler(ctx) {
     const list = response.data.data.list.map((e) => ({
         title: e.title,
         link: 'https://www.163.com/dy/article/' + e.docid + '.html',
-        pubDate: timezone(parseDate(e.ptime), 8),
+        pubDate: parseDate(e.ptime, 8),
         author: e.source,
         imgsrc: e.imgsrc,
     }));
 
-    const items = await Promise.all(list.map((e) => parseDyArticle(e, cache.tryGet)));
+    const items = await Promise.all(list.map((e) => parseDyArticle(e)));
 
     return {
         title: `网易号 - ${list[0].author}`,

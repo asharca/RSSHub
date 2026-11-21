@@ -2,10 +2,11 @@ import { load } from 'cheerio';
 import type { Context } from 'hono';
 import { renderToString } from 'hono/jsx/dom/server';
 
+import InvalidParameterError from '@/errors/types/invalid-parameter';
 import type { Data, DataItem, Route } from '@/types';
 import cache from '@/utils/cache';
 import got from '@/utils/got';
-import { parseDate } from '@/utils/parse-date';
+import { parseDate, parseDateRange } from '@/utils/time';
 
 import { namespace } from './namespace';
 
@@ -37,10 +38,13 @@ export const route: Route = {
         const apiUrl = `${baseUrl}/searchs/exhibition.html`;
 
         const typeParam = ctx.req.param('type');
+        if (typeParam && !Object.hasOwn(TYPE_MAP, typeParam)) {
+            throw new InvalidParameterError(`Unsupported exhibition type. Use ${Object.keys(TYPE_MAP).join(', ')} or omit it for all current exhibitions.`);
+        }
 
         const currentType = typeParam ? TYPE_MAP[typeParam] : undefined;
 
-        const searchParams: Record<string, string> = {
+        const searchParams = {
             [Math.random().toString()]: '',
             category_id: '169',
             old_year: '1',
@@ -49,7 +53,7 @@ export const route: Route = {
             pagesize: '50',
         };
 
-        // only add type_cid to searchParams when the type parameter is valid, otherwise keep it as undefined to fetch all exhibitions without filtering
+        // Omit type_cid to fetch all current exhibitions when no type was requested.
         if (currentType?.cid) {
             searchParams.type_cid = currentType.cid;
         }
@@ -66,7 +70,7 @@ export const route: Route = {
         });
 
         const museumName = namespace.zh?.name || namespace.name;
-        const titleTag = currentType ? `${currentType.name}` : '正在展览';
+        const titleTag = currentType ? currentType.name : '正在展览';
         const $ = load(response.data);
 
         const itemElements = $('.item').toArray();
@@ -76,7 +80,7 @@ export const route: Route = {
             const title = $item.find('a.aa').attr('title') || '';
 
             // Filter out 结束 or 暂闭 status exhibition
-            const status = $item.find('.label').text().trim();
+            const status = $item.find('.label').text();
             if (status.includes('结束') || status.includes('暂闭')) {
                 return null;
             }
@@ -105,7 +109,7 @@ export const route: Route = {
 
             const cacheKey = hasNoLink ? `dpm-exhibit-${title}-${duration}` : itemLink;
 
-            return cache.tryGet(cacheKey, async () => {
+            return cache.tryGet(cacheKey, async (): Promise<DataItem> => {
                 let fullDuration = duration;
 
                 // if the exhibition is marked as incomplete, try to fetch the detail page to get the full duration, but only if there is a valid link to follow
@@ -126,22 +130,9 @@ export const route: Route = {
                     fullDuration = '未定/常设';
                 }
 
-                const cleanDuration = fullDuration.replaceAll('.', '-').replaceAll('/', '-');
+                const { startDate, endDate } = parseDateRange(fullDuration);
 
-                // use YYYY-MM-DD for date format
-                const dateMatches = cleanDuration.match(/\d{4}-\d{2}-\d{2}/g);
-
-                let startDate: string | undefined;
-                let endDate: string | undefined;
-
-                if (dateMatches) {
-                    startDate = dateMatches[0];
-                    if (dateMatches.length >= 2) {
-                        endDate = dateMatches[1];
-                    }
-                }
-
-                const pubDate = startDate ? parseDate(startDate) : undefined;
+                const pubDate = startDate ? parseDate(startDate, 'YYYY-MM-DD', 8) : undefined;
 
                 const description = renderToString(
                     <div>
@@ -185,7 +176,7 @@ export const route: Route = {
                         endDate, // format: YYYY-MM-DD or '未定/常设'
                         itemLink,
                     },
-                } as DataItem;
+                };
             });
         });
 

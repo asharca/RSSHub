@@ -1,9 +1,17 @@
 import { load } from 'cheerio';
+import pMap from 'p-map';
 
 import type { Route } from '@/types';
 import cache from '@/utils/cache';
 import ofetch from '@/utils/ofetch';
-import { parseDate } from '@/utils/parse-date';
+import { parseDate } from '@/utils/time';
+
+interface WordpressPost {
+    title: { rendered: string };
+    link: string;
+    date_gmt: string;
+    _embedded?: { author?: Array<{ name: string }> };
+}
 
 const rootUrl = 'https://www.quantamagazine.org';
 
@@ -29,7 +37,7 @@ const processArticleContent = (html: string | null, articleLink?: string): strin
 
     // Handle lottie-player animations
     // Multiple lottie-players might exist (desktop/mobile versions) - replace all with placeholders first
-    const lottieMatches = [...processed.matchAll(/<lottie-player[^>]*src="([^"]+)"[^>]*><\/lottie-player>/g)];
+    const lottieMatches = processed.matchAll(/<lottie-player[^>]*src="([^"]+)"[^>]*><\/lottie-player>/g).toArray();
     const uniqueAnimations = new Set();
 
     // Replace each lottie-player, but track unique animations by filename
@@ -51,7 +59,7 @@ const processArticleContent = (html: string | null, articleLink?: string): strin
             const linkUrl = articleLink || rootUrl;
             const badgeImg = 'https://img.shields.io/badge/🎬-View_Interactive_Animation-0066CC?style=for-the-badge';
             const replacement = `<p style="text-align: center; margin: 20px 0;"><a href="${linkUrl}" target="_blank"><img src="${badgeImg}" alt="View Interactive Animation" /></a></p>`;
-            processed = processed.replace(match[0], replacement);
+            processed = processed.replace(match[0], () => replacement);
         }
     }
 
@@ -59,10 +67,11 @@ const processArticleContent = (html: string | null, articleLink?: string): strin
 };
 
 export const handler = async (ctx) => {
-    const limit = ctx.req.query('limit') ? Number.parseInt(ctx.req.query('limit'), 10) : 20;
+    const requestedLimit = Number(ctx.req.query('limit'));
+    const limit = Number.isSafeInteger(requestedLimit) && requestedLimit > 0 ? Math.min(requestedLimit, 100) : 20;
 
     const apiUrl = `${rootUrl}/wp-json/wp/v2/posts`;
-    const posts = await ofetch(apiUrl, {
+    const posts = await ofetch<WordpressPost[]>(apiUrl, {
         query: {
             per_page: limit,
             page: 1,
@@ -70,8 +79,9 @@ export const handler = async (ctx) => {
         },
     });
 
-    const items = await Promise.all(
-        posts.map((item) =>
+    const items = await pMap(
+        posts,
+        (item) =>
             cache.tryGet(item.link, async () => {
                 // Get author name from embedded data
                 const authorName = item._embedded?.author?.[0]?.name || '';
@@ -97,10 +107,10 @@ export const handler = async (ctx) => {
                     description: contents,
                     link: item.link,
                     guid: item.link,
-                    pubDate: parseDate(item.date),
+                    pubDate: parseDate(item.date_gmt, 0),
                 };
-            })
-        )
+            }),
+        { concurrency: 3 }
     );
 
     return {

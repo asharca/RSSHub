@@ -1,8 +1,21 @@
+import Honeybadger from '@honeybadger-io/js';
+import { close, init } from '@sentry/node';
 import { load } from 'cheerio';
-import { describe, expect, it } from 'vitest';
+import { Hono } from 'hono';
+import { http, HttpResponse } from 'msw';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import app from '@/app';
 import { config } from '@/config';
+
+const requestWithErrorHandler = async (errorHandler: Parameters<Hono['onError']>[0]) => {
+    const testApp = new Hono();
+    testApp.onError(errorHandler);
+    testApp.get('/test/path', () => {
+        throw new Error('boom');
+    });
+    return await testApp.request('/test/path');
+};
 
 describe('error', () => {
     it('error', async () => {
@@ -18,14 +31,14 @@ describe('httperror', () => {
         const response = await app.request('/test/httperror');
         expect(response.status).toBe(503);
         const text = await response.text();
-        expect(text).toContain('FetchError: [GET] &quot;https://httpbingo.org/status/404&quot;: 404');
+        expect(text).toContain('FetchError: [GET] &quot;https://httpbingo.org&quot;: 404');
     }, 20000);
 });
 
 describe('RequestInProgressError', () => {
     it('RequestInProgressError with retry', async () => {
         const responses = await Promise.all([app.request('/test/slow'), app.request('/test/slow')]);
-        expect(new Set(responses.map((r) => r.status))).toEqual(new Set([200, 200]));
+        expect(responses.map((r) => r.status)).toEqual([200, 200]);
     });
     it('RequestInProgressError', async () => {
         const responses = await Promise.all([app.request('/test/slow4'), app.request('/test/slow4')]);
@@ -95,5 +108,85 @@ describe('route throws an error', () => {
                 default:
             }
         });
+    });
+});
+
+describe('error handler request url', () => {
+    it('hides the path and query of the upstream request url', async () => {
+        const { default: server } = await import('@/setup.test');
+        server.use(http.get('http://rsshub.test/botPATHSECRET/lookup', () => HttpResponse.json({}, { status: 404 })));
+        const { default: ofetch } = await import('@/utils/ofetch');
+        const { errorHandler } = await import('@/errors');
+
+        const testApp = new Hono();
+        testApp.onError(errorHandler);
+        testApp.get('/test/path', () => ofetch('http://rsshub.test/botPATHSECRET/lookup', { query: { key: 'QUERYSECRET' } }));
+
+        const responses = await Promise.all([testApp.request('/test/path'), testApp.request('/test/path?format=json')]);
+        expect(responses.map((r) => r.status)).toEqual([503, 503]);
+        const [html, json] = await Promise.all(responses.map((r) => r.text()));
+        expect(html).toContain('FetchError: [GET] &quot;http://rsshub.test&quot;: 404');
+        expect(JSON.parse(json).error.message).toBe('[GET] "http://rsshub.test": 404 Not Found');
+        expect(html + json).not.toMatch(/PATHSECRET|QUERYSECRET/);
+    });
+});
+
+describe('error handler honeybadger', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.resetModules();
+    });
+
+    it('sends errors to honeybadger when enabled', async () => {
+        process.env.HONEYBADGER_API_KEY = 'hbp_test_key';
+        vi.resetModules();
+
+        const notify = vi.spyOn(Honeybadger, 'notify').mockReturnValue(true);
+        const { default: logger } = await import('@/utils/logger');
+        vi.spyOn(logger, 'error').mockReturnValue(logger);
+
+        const { errorHandler } = await import('@/errors');
+        const response = await requestWithErrorHandler(errorHandler);
+        expect(response.status).toBe(503);
+
+        expect(notify).toHaveBeenCalledWith(expect.any(Error), {
+            context: { name: 'test' },
+        });
+
+        delete process.env.HONEYBADGER_API_KEY;
+    });
+});
+
+describe('error handler sentry', () => {
+    afterEach(async () => {
+        await close();
+        vi.restoreAllMocks();
+        vi.resetModules();
+    });
+
+    it('sends errors to sentry when enabled', async () => {
+        process.env.SENTRY = 'dsn';
+        vi.resetModules();
+
+        const beforeSend = vi.fn(() => null);
+        init({
+            dsn: 'https://public@sentry.example.test/1',
+            beforeSend,
+            defaultIntegrations: false,
+            enableOpenTelemetrySetup: false,
+        });
+
+        const { default: logger } = await import('@/utils/logger');
+        vi.spyOn(logger, 'error').mockReturnValue(logger);
+
+        const { errorHandler } = await import('@/errors');
+        const response = await requestWithErrorHandler(errorHandler);
+        expect(response.status).toBe(503);
+
+        await vi.waitFor(() => {
+            expect(beforeSend).toHaveBeenCalledWith(expect.objectContaining({ tags: expect.objectContaining({ name: 'test' }) }), expect.any(Object));
+        });
+
+        delete process.env.SENTRY;
     });
 });

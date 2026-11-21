@@ -1,13 +1,14 @@
 import { load } from 'cheerio';
 
-import type { Route } from '@/types';
+import type { Data, Route } from '@/types';
 import { ViewType } from '@/types';
 import ofetch from '@/utils/ofetch';
-import { parseDate } from '@/utils/parse-date';
+import { getRouteLimit } from '@/utils/route-limit';
+import { parseDate } from '@/utils/time';
 
 const ROOT_URL = 'https://www.lemonde.fr';
 
-const feedMap: Record<string, string> = {
+const feedMap = {
     '': `${ROOT_URL}/rss/une.xml`,
     international: `${ROOT_URL}/international/rss_full.xml`,
     politique: `${ROOT_URL}/politique/rss_full.xml`,
@@ -72,7 +73,7 @@ export const route: Route = {
 | decodeurs     | Fact-checking          |`,
 };
 
-async function handler(ctx) {
+async function handler(ctx): Promise<Data> {
     const category = ctx.req.param('category') ?? '';
     const feedUrl = feedMap[category];
 
@@ -87,7 +88,7 @@ async function handler(ctx) {
     const feedTitle = channel.children('title').text();
     const feedLink = channel.children('link').text() || ROOT_URL;
 
-    const limit = ctx.req.query('limit') ? Number.parseInt(ctx.req.query('limit'), 10) : 20;
+    const limit = getRouteLimit(ctx, 20);
 
     const items = $('item')
         .toArray()

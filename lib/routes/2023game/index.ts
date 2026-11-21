@@ -3,7 +3,7 @@ import type { Context } from 'hono';
 
 import type { Data, DataItem, Route } from '@/types';
 import got from '@/utils/got';
-import { parseDate } from '@/utils/parse-date';
+import { parseDate } from '@/utils/time';
 
 export const route: Route = {
     path: '/:category?/:tab?',
@@ -39,7 +39,7 @@ async function handler(ctx: Context): Promise<Data> {
     const currentUrl = `https://www.2023game.com/${category}/`;
 
     const response = await got(currentUrl);
-    const $ = load(response.data as any);
+    const $ = load(response.data);
 
     let selector = '.news';
     if (tab !== 'all') {
@@ -52,11 +52,19 @@ async function handler(ctx: Context): Promise<Data> {
             const $item = $(item);
             const href = $item.find('a').attr('href');
             return {
-                title: $item.text().trim(),
+                title: $item.find('h2').text(),
                 guid: `2023game:${href}`,
-                link: href!,
-                pubDate: parseDate($item.find('.time_box').text().trim()),
-                description: $item.html() ?? '',
+                link: new URL(href!, currentUrl).href,
+                pubDate: parseDate($item.find('.time_box').text()),
+                description: $item
+                    .find('.img_box, .info_box > p')
+                    .toArray()
+                    .map((element) => $.html(element))
+                    .join(''),
+                category: $item
+                    .find('.vg_tab')
+                    .toArray()
+                    .map((element) => $(element).text()),
             };
         });
 

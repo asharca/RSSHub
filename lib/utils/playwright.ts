@@ -4,122 +4,147 @@ import { chromium } from 'patchright';
 import { config } from '@/config';
 
 import logger from './logger';
+import { limitContentLength, limitNavigation } from './playwright-utils';
 import proxy from './proxy';
 
 type GotoOptions = Parameters<Page['goto']>[1];
 
-type ProxyState = NonNullable<ReturnType<typeof proxy.getCurrentProxy>>;
+interface ProxyState {
+    uri: string;
+    urlHandler: URL | null;
+}
 
+const configuredProxy: ProxyState | null = proxy.proxyUri ? { uri: proxy.proxyUri, urlHandler: proxy.proxyUrlHandler } : null;
 const proxyServerFromUrl = (proxyUrl: URL) => {
     const protocol = proxyUrl.protocol.replace('socks5h:', 'socks5:').replace('socks4a:', 'socks4:');
     return `${protocol}//${proxyUrl.host}`;
 };
 
-const getProxyOptions = (currentProxy: ProxyState | null | undefined) => {
+interface ProxyOptions {
+    args: string[];
+    proxy?: LaunchOptions['proxy'];
+}
+
+const getProxyOptions = (currentProxy: ProxyState | null | undefined): ProxyOptions => {
     if (!currentProxy) {
-        return {};
+        return { args: [] };
+    }
+
+    if (proxy.proxyIsPAC) {
+        return { args: [`--proxy-pac-url=${currentProxy.uri}`] };
     }
 
     const username = currentProxy.urlHandler?.username;
     const password = currentProxy.urlHandler?.password;
     if (username || password) {
-        if (currentProxy.urlHandler.protocol !== 'http:') {
+        if (currentProxy.urlHandler!.protocol !== 'http:') {
             logger.warn('SOCKS/HTTPS proxy with authentication is not supported by playwright, continue without proxy');
-            return {};
+            return { args: [] };
         }
 
         return {
+            args: [],
             proxy: {
                 password: decodeURIComponent(password ?? ''),
-                server: proxyServerFromUrl(currentProxy.urlHandler),
+                server: proxyServerFromUrl(currentProxy.urlHandler!),
                 username: decodeURIComponent(username ?? ''),
             },
-        } satisfies Pick<LaunchOptions, 'proxy'>;
+        };
     }
 
     return {
+        args: [],
         proxy: {
             server: currentProxy.uri.replace('socks5h://', 'socks5://').replace('socks4a://', 'socks4://').replace(/\/$/, ''),
         },
-    } satisfies Pick<LaunchOptions, 'proxy'>;
+    };
 };
 
-const COMMON_LAUNCH_ARGS = ['--no-sandbox', '--disable-setuid-sandbox', '--window-position=0,0', '--ignore-certificate-errors', '--ignore-certificate-errors-spki-list'];
+// Patchright already patches playwright's default args (e.g. injects --disable-blink-features=AutomationControlled and strips --enable-automation)
+const COMMON_LAUNCH_ARGS = ['--no-sandbox', '--disable-setuid-sandbox', '--window-position=0,0'];
 
-// Patchright already patches playwright's default args (e.g. injects --disable-blink-features=AutomationControlled and strips --enable-automation), so we don't add those manually.
-const getLaunchOptions = (currentProxy?: ProxyState | null): LaunchOptions => ({
-    args: COMMON_LAUNCH_ARGS,
+const getLaunchOptions = (proxyOptions: ProxyOptions): LaunchOptions => ({
+    args: [...COMMON_LAUNCH_ARGS, ...proxyOptions.args],
+    channel: proxy.proxyIsPAC ? 'chromium' : undefined,
     executablePath: config.chromiumExecutablePath || undefined,
     headless: true,
-    ...getProxyOptions(currentProxy),
+    proxy: proxyOptions.proxy,
 });
 
-// Browserless accepts launch options as a `launch` URL query parameter (URL-encoded JSON).
-// (Patchright's own launch-server uses `launch-options` — RSSHub's WS_ENDPOINT targets browserless, so we emit `launch`.)
-// The browserless schema also differs from patchright's LaunchOptions: no `executablePath`, and `ignoreHTTPSErrors` is renamed to `acceptInsecureCerts`.
-type BrowserlessLaunchOptions = {
-    acceptInsecureCerts?: boolean;
-    args?: string[];
-    headless?: boolean;
-    ignoreDefaultArgs?: boolean | string[];
-    proxy?: LaunchOptions['proxy'];
-    slowMo?: number;
-    stealth?: boolean;
+type BrowserlessLaunchOptions = Pick<LaunchOptions, 'args' | 'headless' | 'proxy'>;
+type BrowserlessCdpLaunchOptions = Omit<BrowserlessLaunchOptions, 'proxy'> & { stealth?: boolean };
+
+const toBrowserlessLaunchOptions = (proxyOptions: ProxyOptions): BrowserlessLaunchOptions => ({
+    args: [...COMMON_LAUNCH_ARGS, ...proxyOptions.args],
+    headless: true,
+    proxy: proxyOptions.proxy,
+});
+
+// CDP accepts `stealth` but NOT a `proxy` object.
+const toBrowserlessCDPLaunchOptions = (proxyOptions: ProxyOptions): BrowserlessCdpLaunchOptions => {
+    const args = [...COMMON_LAUNCH_ARGS, ...proxyOptions.args];
+
+    if (proxyOptions.proxy?.username || proxyOptions.proxy?.password) {
+        logger.warn('Proxy authentication is not supported over CDP (--proxy-server), continue without proxy');
+    } else if (proxyOptions.proxy) {
+        args.push(`--proxy-server=${proxyOptions.proxy.server}`);
+    }
+
+    return {
+        args,
+        headless: true,
+        stealth: true,
+    };
 };
 
-const toBrowserlessLaunchOptions = (currentProxy?: ProxyState | null): BrowserlessLaunchOptions => ({
-    acceptInsecureCerts: true,
-    args: COMMON_LAUNCH_ARGS,
-    headless: true,
-    stealth: true,
-    ...getProxyOptions(currentProxy),
-});
-
-const getContextOptions = (): BrowserContextOptions => ({
-    ignoreHTTPSErrors: true,
+const getContextOptions = (javaScriptEnabled?: boolean): BrowserContextOptions => ({
+    ...(javaScriptEnabled !== undefined && { javaScriptEnabled }),
     userAgent: config.ua,
 });
 
-const launchBrowser = async (currentProxy?: ProxyState | null) => {
-    const browser = config.playwrightWSEndpoint ? await chromium.connect(getBrowserlessEndpoint(config.playwrightWSEndpoint, toBrowserlessLaunchOptions(currentProxy))) : await chromium.launch(getLaunchOptions(currentProxy));
-    const context = await browser.newContext(getContextOptions());
-    return { browser, context };
+// CDP > WS > local
+const launchBrowser = async (proxyOptions: ProxyOptions, javaScriptEnabled?: boolean) => {
+    let browser: Browser;
+    if (config.playwrightCDPEndpoint) {
+        browser = await chromium.connectOverCDP(getBrowserlessEndpoint(config.playwrightCDPEndpoint, toBrowserlessCDPLaunchOptions(proxyOptions)));
+    } else if (config.playwrightWSEndpoint) {
+        browser = await chromium.connect(getBrowserlessEndpoint(config.playwrightWSEndpoint, toBrowserlessLaunchOptions(proxyOptions)));
+    } else {
+        browser = await chromium.launch(getLaunchOptions(proxyOptions));
+    }
+    try {
+        const context = await browser.newContext(getContextOptions(javaScriptEnabled));
+        context.on('page', limitContentLength);
+        context.on('page', limitNavigation);
+        return { browser, context };
+    } catch (error) {
+        await browser.close();
+        throw error;
+    }
 };
 
-// Merge our launch options into the existing `launch` query parameter so endpoint-level options
-// (e.g. `?launch=%7B%22stealth%22%3Atrue%7D`) are preserved instead of being overwritten.
 const getBrowserlessEndpoint = (endpoint: string, launchOptions: BrowserlessLaunchOptions) => {
     const endpointURL = new URL(endpoint);
-    const existing = endpointURL.searchParams.get('launch');
-    let merged: BrowserlessLaunchOptions = launchOptions;
-    if (existing) {
-        try {
-            merged = { ...(JSON.parse(existing) as BrowserlessLaunchOptions), ...launchOptions };
-        } catch {
-            // Existing value is not JSON (could be base64 or malformed); leave caller's options as the source of truth.
-        }
-    }
-    endpointURL.searchParams.set('launch', JSON.stringify(merged));
-    return endpointURL.toString();
+    endpointURL.searchParams.set('launch', JSON.stringify(launchOptions));
+    return endpointURL.href;
 };
 
-const scheduleClose = (browser: Browser, timeout = 30000) => {
+// upper bound on how long a browser stays open when the caller owns its lifetime
+const MAX_CLOSE_TIMEOUT = 300000;
+
+const scheduleClose = (browser: Browser, timeout = 30000) =>
     setTimeout(() => {
         void browser.close();
-    }, timeout);
-};
+    }, timeout || MAX_CLOSE_TIMEOUT);
 
 /**
  * @returns Playwright browser context (native `newPage()` shares state across calls)
  */
-const outPlaywright = async () => {
-    const currentProxy = proxy.getCurrentProxy();
-    const { browser, context } = await launchBrowser(currentProxy && proxy.proxyObj.url_regex === '.*' ? currentProxy : null);
+export default async function outPlaywright() {
+    const { browser, context } = await launchBrowser(getProxyOptions(proxy.proxyObj.url_regex === '.*' ? configuredProxy : null));
     scheduleClose(browser);
     return context;
-};
-
-export default outPlaywright;
+}
 
 // No-op in Node.js environment (used by Worker build via alias)
 export const setBrowserBinding = (_binding: any) => {};
@@ -130,12 +155,18 @@ export const setBrowserBinding = (_binding: any) => {};
 export const getPlaywrightPage = async (
     url: string,
     instanceOptions: {
+        // Set to zero only when the caller always awaits destroy() in finally; the browser is still closed after MAX_CLOSE_TIMEOUT.
         closeTimeout?: number;
         gotoConfig?: GotoOptions;
         noGoto?: boolean;
+        javaScriptEnabled?: boolean;
+        useConfiguredEndpoint?: boolean;
         onBeforeLoad?: (page: Page, context?: BrowserContext) => Promise<void> | void;
     } = {}
 ) => {
+    if (instanceOptions.useConfiguredEndpoint && !config.playwrightWSEndpoint && !config.playwrightCDPEndpoint) {
+        throw new Error('Configure PLAYWRIGHT_WS_ENDPOINT or PLAYWRIGHT_CDP_ENDPOINT to use the remote Playwright browser.');
+    }
     let allowProxy = false;
     const proxyRegex = new RegExp(proxy.proxyObj.url_regex);
     let urlHandler: URL | undefined;
@@ -149,41 +180,40 @@ export const getPlaywrightPage = async (
         allowProxy = true;
     }
 
-    const currentProxy = proxy.getCurrentProxy();
-    const currentProxyState = currentProxy && allowProxy ? currentProxy : null;
-    const hasProxy = Boolean(getProxyOptions(currentProxyState).proxy);
-    const { browser, context } = await launchBrowser(currentProxyState);
-    scheduleClose(browser, instanceOptions.closeTimeout);
-    const page = await context.newPage();
-
-    if (hasProxy && currentProxyState) {
-        logger.debug(`Proxying request in playwright via ${currentProxyState.uri}: ${url}`);
-    }
-
-    if (instanceOptions.onBeforeLoad) {
-        await instanceOptions.onBeforeLoad(page, context);
-    }
-
-    if (!instanceOptions.noGoto) {
-        try {
-            await page.goto(url, instanceOptions.gotoConfig || { waitUntil: 'domcontentloaded' });
-        } catch (error) {
-            if (hasProxy && currentProxyState && proxy.multiProxy) {
-                logger.warn(`Playwright navigation failed with proxy ${currentProxyState.uri}, marking as failed: ${error}`);
-                proxy.markProxyFailed(currentProxyState.uri);
-                throw error;
-            }
-            throw error;
-        }
-    }
-
-    return {
-        context,
-        destroy: async () => {
-            await context.close();
-        },
-        page,
+    const currentProxyState = allowProxy ? configuredProxy : null;
+    const proxyOptions = getProxyOptions(currentProxyState);
+    const hasProxy = Boolean(proxyOptions.proxy || proxyOptions.args.length);
+    const { browser, context } = await launchBrowser(proxyOptions, instanceOptions.javaScriptEnabled);
+    const closeTimer = scheduleClose(browser, instanceOptions.closeTimeout);
+    const destroy = async () => {
+        clearTimeout(closeTimer);
+        await browser.close();
     };
+
+    try {
+        const page = await context.newPage();
+
+        if (hasProxy) {
+            logger.debug(`Proxying request in playwright: ${url}`);
+        }
+
+        if (instanceOptions.onBeforeLoad) {
+            await instanceOptions.onBeforeLoad(page, context);
+        }
+
+        if (!instanceOptions.noGoto) {
+            await page.goto(url, instanceOptions.gotoConfig || { waitUntil: 'domcontentloaded' });
+        }
+
+        return {
+            context,
+            destroy,
+            page,
+        };
+    } catch (error) {
+        await destroy();
+        throw error;
+    }
 };
 
 export { type Page } from 'patchright';

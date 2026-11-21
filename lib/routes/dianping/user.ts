@@ -45,7 +45,7 @@ function addPictureAndVideo(item: any) {
     return content;
 }
 
-const starMap: Record<number, string> = {
+const starMap = {
     0: '无',
     10: '一星',
     20: '二星',
@@ -59,26 +59,20 @@ const starMap: Record<number, string> = {
 async function handler(ctx) {
     const id = ctx.req.param('id');
 
-    const userPage = `https://m.dianping.com/userprofile/${id}`;
+    const userPage = `https://m.dianping.com/userprofile/${encodeURIComponent(id)}`;
     const cookie = config.dianping.cookie;
 
-    const headers: Record<string, string> = {
-        Referer: userPage,
-    };
+    const headers: { Referer: string; Cookie: string } | { Referer: string } = cookie ? { Referer: userPage, Cookie: cookie } : { Referer: userPage };
 
-    if (cookie) {
-        headers.Cookie = cookie;
-    }
-
-    const pageResponse = await ofetch(userPage, {
+    const pageResponse = await ofetch<string>(userPage, {
         headers,
         headerGeneratorOptions: PRESETS.MODERN_IOS,
     });
 
     const nickNameReg = /window\.nickName = "(.*?)"/;
-    const nickName = nickNameReg.exec(pageResponse as string)?.[1];
+    const nickName = nickNameReg.exec(pageResponse)?.[1];
 
-    const response = await ofetch(`https://m.dianping.com/member/ajax/NobleUserFeeds?userId=${id}`, {
+    const response = await ofetch(`https://m.dianping.com/member/ajax/NobleUserFeeds?userId=${encodeURIComponent(id)}`, {
         headers,
         headerGeneratorOptions: PRESETS.MODERN_IOS,
     });

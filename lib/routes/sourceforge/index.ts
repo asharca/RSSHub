@@ -2,7 +2,7 @@ import { load } from 'cheerio';
 
 import type { Route } from '@/types';
 import got from '@/utils/got';
-import { parseDate } from '@/utils/parse-date';
+import { parseDate } from '@/utils/time';
 
 export const route: Route = {
     path: '/:routeParams?',
@@ -26,7 +26,7 @@ URL params can duplicate, such as \`/sourceforge/topic=artificial-intelligence&o
 };
 
 async function handler(ctx) {
-    const routeParams = ctx.req.param('routeParams');
+    const routeParams = ctx.req.param('routeParams') ?? '';
 
     const baseURL = 'https://sourceforge.net';
     const link = `https://sourceforge.net/directory/?${routeParams.toString()}`;
@@ -43,7 +43,7 @@ async function handler(ctx) {
             const title = item.find('.result-heading-title').text().trim();
             const link = `${baseURL}${item.find('.result-heading-title').attr('href')}`;
             const description = item.find('.result-heading-texts').html();
-            const pubDate = parseDate(item.find('time').attr('datetime'), 'YYYY-MM-DD');
+            const pubDate = parseDate(item.find('time').attr('datetime')!, 'YYYY-MM-DD');
 
             return {
                 title,

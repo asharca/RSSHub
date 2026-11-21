@@ -1,9 +1,11 @@
+import { raw } from 'hono/html';
 import { renderToString } from 'hono/jsx/dom/server';
 
+import { renderYoutube } from '@/routes/youtube/utils';
 import type { Route } from '@/types';
 import cache from '@/utils/cache';
 import ofetch from '@/utils/ofetch';
-import { parseDate } from '@/utils/parse-date';
+import { parseDate } from '@/utils/time';
 
 export const route: Route = {
     path: '/user/sheets/:username/:iso?/:freeOnly?',
@@ -40,16 +42,16 @@ async function handler(ctx) {
     const exchangeRateUrl = 'https://payport.pd.mapia.io/v2/currency';
     const { username, iso = 'USD', freeOnly } = ctx.req.param();
 
-    const rates = (await cache.tryGet('mymusicfive:exchangeRate', () =>
-        ofetch(exchangeRateUrl, {
+    const rates = await cache.tryGet('mymusicfive:exchangeRate', () =>
+        ofetch<Record<string, string>>(exchangeRateUrl, {
             query: {
                 serviceProvider: 'mms',
                 'ngsw-bypass': true,
-                'no-cache': Date.now(),
+                'no-cache': Temporal.Now.instant().epochMilliseconds,
                 skipHeaders: true,
             },
         })
-    )) as Record<string, string>;
+    );
 
     const artistDetail = await cache.tryGet(`mymusicfive:artistInfo:${username}`, () =>
         ofetch(graphqlUrl, {
@@ -171,12 +173,12 @@ async function handler(ctx) {
 
     const items = response.data.sheetSearch.list.map((item) => {
         let finalPrice = 'Unknown';
-        const price = Number.parseFloat(item.price);
+        const price = Number(item.price);
 
         if (item.price === 0) {
             finalPrice = 'Free';
         } else if (!Number.isNaN(price) && Number.isFinite(price)) {
-            const rate = Number.parseFloat(rates[iso]);
+            const rate = Number(rates[iso]);
             if (rate) {
                 finalPrice = `${(price * rate).toFixed(2)} ${iso}`;
             }
@@ -209,6 +211,7 @@ async function handler(ctx) {
         image: artistInfo.profileUrl,
         link: `https://www.mymusicfive.com/${username}?viewType=sheet&orderBy=createdAt`,
         item: items,
+        allowEmpty: Boolean(freeOnly),
     };
 }
 
@@ -226,19 +229,8 @@ const MymusicSheetDescription = ({
         price?: string;
     };
 }) => (
-    <div class="item-description">
-        {youtubeId ? (
-            <iframe
-                id="ytplayer"
-                type="text/html"
-                width="640"
-                height="360"
-                src={`https://www.youtube-nocookie.com/embed/${youtubeId}?autoplay=0`}
-                frameborder="0"
-                allowfullscreen
-                referrerpolicy="strict-origin-when-cross-origin"
-            ></iframe>
-        ) : null}
+    <div className="item-description">
+        {youtubeId ? raw(renderYoutube(true, youtubeId, undefined, undefined)) : null}
         {content.musicName ? <p>Music Name: {content.musicName}</p> : null}
         {content.musicMemo ? <p>Music Memo: {content.musicMemo}</p> : null}
         {content.musicianName ? <p>Musician Name: {content.musicianName}</p> : null}

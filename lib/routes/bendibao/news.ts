@@ -1,11 +1,10 @@
 import { load } from 'cheerio';
 
 import InvalidParameterError from '@/errors/types/invalid-parameter';
-import type { Route } from '@/types';
+import type { DataItem, Route } from '@/types';
 import cache from '@/utils/cache';
 import got from '@/utils/got';
-import { parseDate } from '@/utils/parse-date';
-import timezone from '@/utils/timezone';
+import { parseDate } from '@/utils/time';
 import { isValidHost } from '@/utils/valid-host';
 
 export const route: Route = {
@@ -42,6 +41,15 @@ export const route: Route = {
 > **香港特别行政区** 和 **澳门特别行政区** 的本地宝城市页面不更新资讯。`,
 };
 
+// only follow links on the site itself
+const isSiteItem = (item: DataItem) => {
+    if (!item.link) {
+        return false;
+    }
+    const { protocol, hostname } = new URL(item.link);
+    return ['http:', 'https:'].includes(protocol) && (hostname === 'bendibao.com' || hostname.endsWith('.bendibao.com'));
+};
+
 async function handler(ctx) {
     const city = ctx.req.param('city');
     if (!isValidHost(city)) {
@@ -63,16 +71,17 @@ async function handler(ctx) {
 
     let items = $('ul.focus-news li')
         .toArray()
-        .map((item) => {
-            item = $(item).find('a');
+        .map((item): DataItem => {
+            const $item = $(item).find('a');
 
-            const link = item.attr('href');
+            const link = $item.attr('href');
 
             return {
-                title: item.text(),
-                link: link.indexOf('http') === 0 ? link : `${rootUrl}${link}`,
+                title: $item.text(),
+                link: link && new URL(link, rootUrl).href,
             };
-        });
+        })
+        .filter((item) => isSiteItem(item));
 
     // Cities share 2 sets of ui.
     //
@@ -91,21 +100,22 @@ async function handler(ctx) {
 
         items = $('#listNewsTimeLy div.info')
             .toArray()
-            .map((item) => {
-                item = $(item).find('a');
+            .map((item): DataItem => {
+                const $item = $(item).find('a');
 
-                const link = item.attr('href');
+                const link = $item.attr('href');
 
                 return {
-                    title: item.text(),
-                    link: link.indexOf('http') === 0 ? link : `${rootUrl}${link}`,
+                    title: $item.text(),
+                    link: link && new URL(link, rootUrl).href,
                 };
-            });
+            })
+            .filter((item) => isSiteItem(item));
     }
 
     items = await Promise.all(
         items.map((item) =>
-            cache.tryGet(item.link, async () => {
+            cache.tryGet(item.link!, async () => {
                 try {
                     const detailResponse = await got({
                         method: 'get',
@@ -122,18 +132,12 @@ async function handler(ctx) {
 
                     // Spans for publish dates are the same cases as above.
 
-                    item.pubDate = timezone(
-                        parseDate(
-                            content('span.time')
-                                .text()
-                                .replace(/发布时间：/, '') ?? content('span.public_time').text()
-                        ),
-                        +8
-                    );
+                    const pubTime = (content('span.time').text() || content('span.public_time').text() || content('.top-time').text()).match(/\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2}(?::\d{2})?)?/)?.[0];
+                    item.pubDate = pubTime ? parseDate(pubTime, 8) : undefined;
 
                     return item;
                 } catch {
-                    return '';
+                    return item;
                 }
             })
         )

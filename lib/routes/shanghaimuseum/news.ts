@@ -1,7 +1,22 @@
-import got from '@/utils/got';
-import { parseDate } from '@/utils/parse-date';
+import { load } from 'cheerio';
+import pMap from 'p-map';
 
-export const route = {
+import type { Route } from '@/types';
+import cache from '@/utils/cache';
+import got from '@/utils/got';
+import { parseDate } from '@/utils/time';
+
+interface NewsItem {
+    code: string;
+    title: string;
+    titleDecoded?: string;
+    issueTime: string;
+    artAuthor?: string;
+    infoType?: { entryItemName: string };
+    bulletinInfoType?: { entryItemName: string };
+}
+
+export const route: Route = {
     path: '/information/news/:type?',
     categories: ['travel'],
     example: '/shanghaimuseum/information/news/all',
@@ -12,14 +27,14 @@ export const route = {
     maintainers: ['magazian'],
     radar: [
         {
-            source: ['www.shanghaimuseum.net/mu/frontend/pg/infomation/news'],
+            source: ['www.shanghaimuseum.cn/mu/frontend/pg/infomation/news'],
             target: '/information/news',
         },
     ],
     handler: async (ctx) => {
         const type = ctx.req.param('type') || 'all';
 
-        const baseUrl = 'https://www.shanghaimuseum.net';
+        const baseUrl = 'https://www.shanghaimuseum.cn';
         const apiUrl = `${baseUrl}/mu/frontend/pg/infomation/search-info`;
 
         const payload = {
@@ -60,18 +75,42 @@ export const route = {
             },
         });
 
-        const data = response.data.data;
+        const data: NewsItem[] = response.data.data;
 
-        const items = data.map((item) => {
-            const itemLink = `${baseUrl}/mu/frontend/pg/article/id/${item.code}`;
+        const items = await pMap(
+            data,
+            async (item) => {
+                const itemLink = `${baseUrl}/mu/frontend/pg/article/id/${item.code}`;
 
-            return {
-                title: item.titleDecoded || item.title,
-                pubDate: parseDate(item.issueTime),
-                category: item.infoType?.entryItemName || item.bulletinInfoType?.entryItemName,
-                link: itemLink,
-            };
-        });
+                const detail = await cache.tryGet(itemLink, async () => {
+                    const { data: article } = await got(itemLink);
+                    const $ = load(article);
+                    const content = $('.site-article');
+                    content.children('.title, .issue-date-and-source').remove();
+                    content.find('script').remove();
+                    const documentBase = new URL($('base').attr('href') || itemLink, itemLink).href;
+                    content.find('[src], [href]').each((_, element) => {
+                        for (const attribute of ['src', 'href']) {
+                            const value = $(element).attr(attribute);
+                            if (value) {
+                                $(element).attr(attribute, new URL(value, documentBase).href);
+                            }
+                        }
+                    });
+                    return { description: content.html() };
+                });
+
+                return {
+                    ...detail,
+                    title: item.titleDecoded || item.title,
+                    pubDate: parseDate(item.issueTime, 8),
+                    category: item.infoType?.entryItemName || item.bulletinInfoType?.entryItemName,
+                    author: item.artAuthor || undefined,
+                    link: itemLink,
+                };
+            },
+            { concurrency: 3 }
+        );
 
         return {
             title: `上海博物馆 - ${titleTag}`,

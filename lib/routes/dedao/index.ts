@@ -3,7 +3,7 @@ import { load } from 'cheerio';
 import type { Route } from '@/types';
 import cache from '@/utils/cache';
 import got from '@/utils/got';
-import { parseDate } from '@/utils/parse-date';
+import { parseDate } from '@/utils/time';
 
 export const route: Route = {
     path: '/:category?',
@@ -33,7 +33,7 @@ async function handler(ctx) {
     let items = (category === 'news' ? data.news : category === 'figure' ? data.figure : data.videoList).map((item) => ({
         title: item.title,
         pubDate: parseDate(item.online_time),
-        link: `${rootUrl}/${category === 'news' ? 'article/' : category === 'figure' ? 'people/' : ''}${item.online_time.split('T')[0].split('-').join('')}/${item.token}`,
+        link: `${rootUrl}/${category === 'news' ? 'article/' : category === 'figure' ? 'people/' : ''}${item.online_time.split('T', 1)[0].split('-').join('')}/${item.token}`,
     }));
 
     items = await Promise.all(

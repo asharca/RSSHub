@@ -3,8 +3,7 @@ import { load } from 'cheerio';
 import type { Route } from '@/types';
 import cache from '@/utils/cache';
 import got from '@/utils/got';
-import { parseDate } from '@/utils/parse-date';
-import timezone from '@/utils/timezone';
+import { parseDate } from '@/utils/time';
 
 const host = 'https://www.nowcoder.com';
 
@@ -21,12 +20,6 @@ export const route: Route = {
         supportPodcast: false,
         supportScihub: false,
     },
-    radar: [
-        {
-            source: ['nowcoder.com/'],
-            target: '/experience',
-        },
-    ],
     name: '面经',
     maintainers: ['huyyi'],
     handler,
@@ -40,13 +33,16 @@ export const route: Route = {
 
 async function handler(ctx) {
     const params = new URLSearchParams(ctx.req.query());
+    // access-control credentials must not reach the upstream site or the cached feed
+    params.delete('key');
+    params.delete('code');
     params.append('tagId', ctx.req.param('tagId'));
 
     const link = new URL('/discuss/experience/json', host);
 
     // const link = `https://www.nowcoder.com/discuss/experience/json?tagId=${tagId}&order=${order}&companyId=${companyId}&phaseId=${phaseId}`;
-    link.search = params;
-    const response = await got.get(link.toString());
+    link.search = params.toString();
+    const response = await got.get(link.href);
     const data = response.data.data;
 
     const list = data.discussPosts.map((x) => {
@@ -54,7 +50,7 @@ async function handler(ctx) {
             title: x.postTitle,
             link: new URL('discuss/' + x.postId, host).href,
             author: x.author,
-            pubDate: timezone(parseDate(x.createTime), +8),
+            pubDate: parseDate(x.createTime, 8),
             category: x.postTypeName,
         };
         return info;

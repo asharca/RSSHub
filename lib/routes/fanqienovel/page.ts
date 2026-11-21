@@ -1,9 +1,9 @@
-import * as cheerio from 'cheerio';
+import { load } from 'cheerio';
 import type { Context } from 'hono';
 
 import type { Data, Route } from '@/types';
 import ofetch from '@/utils/ofetch';
-import { parseDate } from '@/utils/parse-date';
+import { parseDate } from '@/utils/time';
 
 interface Chapter {
     itemId: string;
@@ -13,7 +13,7 @@ interface Chapter {
     isPaidPublication: boolean;
     isPaidStory: boolean;
     volume_name: string;
-    firstPassTime: string;
+    firstPassTime?: string;
 }
 
 interface Page {
@@ -71,7 +71,7 @@ async function handler(ctx: Context): Promise<Data> {
     const link = `https://fanqienovel.com/page/${bookId}`;
 
     const response = await ofetch(link);
-    const $ = cheerio.load(response);
+    const $ = load(response);
 
     const initialState = JSON.parse(
         $('script:contains("window.__INITIAL_STATE__")')
@@ -79,13 +79,16 @@ async function handler(ctx: Context): Promise<Data> {
             .match(/window\.__INITIAL_STATE__\s*=\s*(\S.*);/)?.[1] ?? '{}'
     );
 
-    const page = initialState.page as Page;
+    const page: Page = initialState.page;
+    if (!Array.isArray(page?.chapterListWithVolume) || page.chapterListWithVolume.some((volume) => !Array.isArray(volume))) {
+        throw new Error('Fanqie Novel did not return a public chapter directory for this book. Check the book ID and whether the book is still available on the website.');
+    }
     const items = page.chapterListWithVolume.flatMap((volume) =>
         volume.map((chapter) => ({
             title: chapter.title,
             link: `https://fanqienovel.com/reader/${chapter.itemId}`,
             description: chapter.volume_name,
-            pubDate: parseDate(chapter.firstPassTime, 'X'),
+            pubDate: chapter.firstPassTime ? parseDate(chapter.firstPassTime, 'X') : undefined,
             author: page.author,
         }))
     );

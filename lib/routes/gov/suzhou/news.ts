@@ -1,14 +1,13 @@
 import { load } from 'cheerio';
 
 import InvalidParameterError from '@/errors/types/invalid-parameter';
-import type { Route } from '@/types';
+import type { DataItem, Route } from '@/types';
 import cache from '@/utils/cache';
 import got from '@/utils/got';
-import { parseDate } from '@/utils/parse-date';
-import timezone from '@/utils/timezone';
+import { parseDate } from '@/utils/time';
 
 export const route: Route = {
-    path: '/suzhou/news/:uid',
+    path: '/news/:uid',
     categories: ['government'],
     example: '/gov/suzhou/news/news',
     parameters: { uid: '栏目名' },
@@ -128,7 +127,7 @@ async function handler(ctx) {
         const infoList = response.data.infolist.map((item) => ({
             title: item.title,
             link: item.link.startsWith('http') ? item.link : new URL(item.link, rootUrl).href,
-            pubDate: timezone(parseDate(item.pubtime, 'YYYY-MM-DD HH:mm:ss'), 8),
+            pubDate: parseDate(item.pubtime, 'YYYY-MM-DD HH:mm:ss', 8),
         }));
 
         items = await Promise.all(
@@ -150,12 +149,12 @@ async function handler(ctx) {
         items = $('ul.infolist li')
             .toArray()
             .map((item) => {
-                item = $(item);
-                const a = item.find('a');
+                const $item = $(item);
+                const a = $item.find('a');
                 return {
-                    title: a.attr('title'),
-                    link: new URL(a.attr('href'), rootUrl).href,
-                    pubDate: timezone(parseDate(item.find('.time').text(), 'YYYY-MM-DD'), 8),
+                    title: a.attr('title')!,
+                    link: new URL(a.attr('href')!, rootUrl).href,
+                    pubDate: parseDate($item.find('.time').text(), 'YYYY-MM-DD', 8),
                 };
             });
     }

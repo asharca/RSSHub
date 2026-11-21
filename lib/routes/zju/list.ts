@@ -3,7 +3,7 @@ import { load } from 'cheerio';
 import type { Route } from '@/types';
 import cache from '@/utils/cache';
 import got from '@/utils/got';
-import { parseDate } from '@/utils/parse-date';
+import { parseDate } from '@/utils/time';
 
 const host = 'https://www.zju.edu.cn/';
 export const route: Route = {
@@ -43,11 +43,11 @@ async function handler(ctx) {
         .toArray()
         .map((element) => {
             const info = {
-                title: $(element).find('a').attr('title'),
+                title: $(element).find('a').attr('title')!,
                 link: sortUrl($(element).find('a').attr('href')),
                 date: $(element)
                     .text()
-                    .match(/\d{4}-\d{2}-\d{2}/)[0],
+                    .match(/\d{4}-\d{2}-\d{2}/)![0],
             };
             return info;
         });

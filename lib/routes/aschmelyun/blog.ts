@@ -2,7 +2,7 @@ import { load } from 'cheerio';
 
 import type { Route } from '@/types';
 import ofetch from '@/utils/ofetch';
-import { parseDate } from '@/utils/parse-date';
+import { parseDate } from '@/utils/time';
 
 export const route: Route = {
     name: 'Blog',
@@ -26,17 +26,17 @@ async function handler() {
     const items = $('div.rounded-lg')
         .toArray()
         .map((item) => {
-            item = $(item);
-            const a = item.find('a.text-xl').first();
+            const $item = $(item);
+            const a = $item.find('a.text-xl').first();
             return {
                 title: a.text(),
-                link: new URL(a.attr('href'), 'https://aschmelyun.com/blog/').href,
-                pubDate: parseDate(item.find('span.text-sm').text()),
-                category: item
+                link: new URL(a.attr('href')!, 'https://aschmelyun.com/blog/').href,
+                pubDate: parseDate($item.find('span.text-sm').text(), 'MMM D, YYYY'),
+                category: $item
                     .find('a.rounded-full')
                     .toArray()
                     .map((cat) => $(cat).text().trim()),
-                description: item.find('p').first().text(),
+                description: $item.find('p').first().text(),
             };
         });
 

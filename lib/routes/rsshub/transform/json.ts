@@ -5,14 +5,14 @@ import ConfigNotFoundError from '@/errors/types/config-not-found';
 import type { Route } from '@/types';
 import got from '@/utils/got';
 
-function jsonGet(obj, attr) {
-    if (typeof attr !== 'string') {
+function jsonGet(obj, attr: string | null) {
+    if (attr === null) {
         return obj;
     }
     // a.b.c
     // a.b[0].c => a.b.0.c
     for (const key of attr.split('.')) {
-        obj = obj[key];
+        obj = obj?.[key];
     }
     return obj;
 }
@@ -99,9 +99,8 @@ async function handler(ctx) {
         if (link && linkPrefix) {
             link = `${linkPrefix}${link}`;
         }
-        // 补全绝对链接
-        if (link && !link.startsWith('http')) {
-            link = `${new URL(url).origin}${link}`;
+        if (link) {
+            link = new URL(link, url).href;
         }
         return {
             title: jsonGet(item, routeParams.get('itemTitle')),

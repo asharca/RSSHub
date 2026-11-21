@@ -1,8 +1,10 @@
+import pMap from 'p-map';
+
 import { config } from '@/config';
 import type { DataItem } from '@/types';
 import cache from '@/utils/cache';
 import got from '@/utils/got';
-import { parseDate } from '@/utils/parse-date';
+import { parseDate } from '@/utils/time';
 
 import { getAcwScV2ByArg1 } from '../5eplay/utils';
 
@@ -62,42 +64,52 @@ function getHeaders(referer: string, cookie = acwScV2Cookie) {
         'accept-language': locale,
         referer,
         'user-agent': config.trueUA,
-        ...(cookie ? { cookie } : {}),
+        ...(cookie && { cookie }),
     };
 }
 
 function getAcwScV2Cookie(response: string) {
-    const arg1 = response.match(/var arg1='(.*?)';/)?.[1];
+    const arg1 = /var arg1='(.*?)';/.exec(response)?.[1];
     if (!arg1) {
         return '';
     }
     return `acw_sc__v2=${getAcwScV2ByArg1(arg1)}`;
 }
 
-async function requestApi<T>(endpoint: string, referer: string, searchParams?: Record<string, string | number | boolean>) {
+function parseJsonBody<T>(body: string): T | null {
+    try {
+        return JSON.parse(body);
+    } catch {
+        return null;
+    }
+}
+
+async function requestApi<T>(endpoint: string, referer: string, searchParams?: Record<string, string | number | boolean | undefined>) {
     const request = () =>
         got.get(`${apiRootUrl}${endpoint}`, {
             searchParams,
             headers: getHeaders(referer),
         });
 
-    const { data } = await request();
-    if (typeof data !== 'string') {
-        return data as T;
+    const { body } = await request();
+    const payload = parseJsonBody<T>(body);
+    if (payload !== null) {
+        return payload;
     }
 
-    const cookie = getAcwScV2Cookie(data);
+    const cookie = getAcwScV2Cookie(body);
     if (!cookie) {
         throw new Error('TechFlow API returned an unexpected non-JSON response.');
     }
 
     acwScV2Cookie = cookie;
     const retryResponse = await request();
-    if (typeof retryResponse.data === 'string') {
+    const retryPayload = parseJsonBody<T>(retryResponse.body);
+    if (retryPayload === null) {
         throw new TypeError('TechFlow API still returned an anti-crawler challenge after retry.');
     }
 
-    return retryResponse.data as T;
+    return retryPayload;
 }
 
 function getPictureUrl(picture?: string) {
@@ -108,7 +120,8 @@ function getPictureUrl(picture?: string) {
 }
 
 function getCategories(article: Article) {
-    return [...new Set([article.category?.name, ...(article.labels?.map((label) => label.label) ?? [])].filter(Boolean))] as string[];
+    const names = [article.category?.name, ...(article.labels?.map((label) => label.label) ?? [])];
+    return [...new Set(names.filter((name): name is string => Boolean(name)))];
 }
 
 function getArticleItem(article: Article, content?: string): DataItem {
@@ -140,29 +153,29 @@ function getNewsflashItem(newsflash: Newsflash, content?: string): DataItem {
 
 async function getArticleItems({ category, limit }: { category?: string; limit: string | number }) {
     const link = `${rootUrl}/${locale}/article`;
-    const searchParams: Record<string, string | number> = {
+    const searchParams = {
         page: 1,
         page_size: limit,
+        category_id: category || undefined,
     };
-
-    if (category) {
-        searchParams.category_id = category;
-    }
 
     const response = await requestApi<ApiListResponse<Article>>('/client/articles', link, searchParams);
     if (!Array.isArray(response.data)) {
         throw new TypeError('TechFlow API returned an invalid article list.');
     }
 
-    return await Promise.all(
-        response.data.map((article) =>
-            cache.tryGet(`techflowpost:article:${article.id}`, async () => {
+    return await pMap(
+        response.data,
+        async (article) => {
+            const detail = await cache.tryGet(`techflowpost:article-content:v1:${article.id}`, async () => {
                 const itemLink = `${rootUrl}/${locale}/article/${article.id}`;
-                const detail = await requestApi<ArticleDetailResponse>(`/client/articles/${article.id}`, itemLink);
+                const response = await requestApi<ArticleDetailResponse>(`/client/articles/${article.id}`, itemLink);
+                return { content: response.article?.content };
+            });
 
-                return getArticleItem(article, detail.article?.content);
-            })
-        )
+            return getArticleItem(article, detail.content);
+        },
+        { concurrency: 3 }
     );
 }
 
@@ -177,15 +190,18 @@ async function getNewsflashItems(limit: string | number) {
         throw new TypeError('TechFlow API returned an invalid newsflash list.');
     }
 
-    return await Promise.all(
-        response.data.map((newsflash) =>
-            cache.tryGet(`techflowpost:newsflash:${newsflash.id}`, async () => {
+    return await pMap(
+        response.data,
+        async (newsflash) => {
+            const detail = await cache.tryGet(`techflowpost:newsflash-content:v1:${newsflash.id}`, async () => {
                 const itemLink = `${rootUrl}/${locale}/newsletter/${newsflash.id}`;
-                const detail = await requestApi<NewsflashDetailResponse>(`/client/newsflashes/${newsflash.id}`, itemLink);
+                const response = await requestApi<NewsflashDetailResponse>(`/client/newsflashes/${newsflash.id}`, itemLink);
+                return { content: response.content };
+            });
 
-                return getNewsflashItem(newsflash, detail.content);
-            })
-        )
+            return getNewsflashItem(newsflash, detail.content);
+        },
+        { concurrency: 3 }
     );
 }
 
