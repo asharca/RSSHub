@@ -42,7 +42,7 @@ jobs:
                   context: .
                   push: true
                   platforms: linux/amd64
-                  build-args: PUPPETEER_SKIP_DOWNLOAD=0
+                  build-args: PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=0
                   tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:chromium-bundled
                   cache-from: type=gha
                   cache-to: type=gha,mode=max
